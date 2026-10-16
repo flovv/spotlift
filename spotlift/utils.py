@@ -1,30 +1,37 @@
-"""Utility helpers: terminal banners and upgrade checks."""
-from __future__ import annotations
+"""Utility helpers: terminal banners and upgrade helpers."""
 
-import importlib
+import shutil
 import sys
+import warnings
 
 
-def print_banner(msg: str) -> None:
-    """Print a simple terminal banner for important messages."""
-    line = "=" * max(60, len(msg) + 4)
-    print(line)
-    print(f"= {msg}")
-    print(line)
+def check_pro_binary(name: str = "spotlift-pro") -> bool:
+    """Return True if the Pro binary is available on PATH."""
+    return shutil.which(name) is not None
 
 
-def warn_upgrade_if_pro_missing() -> None:
-    """If the optional `spotlift_pro` package isn't available, print an upgrade banner.
+def get_upgrade_instructions(name: str = "spotlift-pro") -> str:
+    """Return a short instruction string for installing the Pro binary.
 
-    The pro package may include native binaries or faster models; this helper
-    gives users clear next steps.
+    Adjust this to match your distribution method (pip, brew, direct download).
     """
-    spec = importlib.util.find_spec("spotlift_pro")
-    if spec is None:
-        print_banner("Upgrade available: install `spotlift_pro` for faster models and extra features")
-        print("Install with: pip install spotlift-pro\nOr visit: https://github.com/flovv/spotlift_pro (private)")
+    return (
+        f"Install the '{name}' binary and make sure it is on your PATH. "
+        "Example (Linux/macOS): download and place on /usr/local/bin, or add to PATH."
+    )
 
 
-def check_pro_binary() -> bool:
-    """Return True if the pro binary is importable on this environment."""
-    return importlib.util.find_spec("spotlift_pro") is not None
+def warn_upgrade(name: str = "spotlift-pro") -> None:
+    """Emit a prominent terminal warning (and raise a UserWarning) if Pro is missing."""
+    if not check_pro_binary(name):
+        msg = (
+            f"Optional binary '{name}' not found. Pro features are disabled.\n"
+            + get_upgrade_instructions(name)
+        )
+        # Print a banner to stderr for terminal users
+        banner = "\n" + "!" * 60 + "\n" + msg + "\n" + "!" * 60 + "\n"
+        try:
+            sys.stderr.write(banner)
+        except Exception:
+            pass
+        warnings.warn(msg, UserWarning)

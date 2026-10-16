@@ -1,34 +1,43 @@
-"""spotlift — measure TV lift on web & Amazon responses (public core)
+"""spotlift package
 
-This package provides lightweight data loaders and baseline modeling helpers.
-The private `spotlift_pro` package (optional) can provide faster binaries or
-proprietary models; this core package will warn and surface upgrade guidance
-when the Pro package isn't available.
+Scaffolded package for measuring TV lift on web traffic and Amazon responses.
+
+This package contains lightweight utilities and placeholders so the public API
+is usable without the Pro binary. Pro features (heavy computation, proprietary
+binaries) are checked at import time and guarded.
 """
 
+__version__ = "0.1.0"
+
+from .baseline import compute_moving_average_baseline, prophet_baseline
+from .loader import load_csv, load_ga4_csv, load_amazon_csv
+from .utils import check_pro_binary, warn_upgrade
+
 __all__ = [
-    "compute_baseline_prophet",
-    "moving_average_baseline",
+    "compute_moving_average_baseline",
+    "prophet_baseline",
+    "load_csv",
     "load_ga4_csv",
     "load_amazon_csv",
-    "print_banner",
-    "warn_upgrade_if_pro_missing",
+    "check_pro_binary",
+    "warn_upgrade",
 ]
 
-from importlib.util import find_spec
+# Check for optional Pro binary and warn on import if missing.
+try:
+    from shutil import which
+except Exception:
+    which = None
 
-_HAS_PRO = find_spec("spotlift_pro") is not None
+_HAS_PRO = False
+if which is not None:
+    _HAS_PRO = which("spotlift-pro") is not None
 
-# Public API
-from .baseline import compute_baseline_prophet, moving_average_baseline
-from .loader import load_ga4_csv, load_amazon_csv
-from .utils import print_banner, warn_upgrade_if_pro_missing
+if not _HAS_PRO:
+    # Lightweight import-time notice — users can call warn_upgrade() for details.
+    import warnings
 
-# If pro is not present, expose a convenience warning function
-if not _HAS_PRO:  # pragma: no cover
-    def check_pro():
-        """Return False when spotlift_pro (the paid/pro binary) isn't installed."""
-        return False
-else:  # pragma: no cover
-    def check_pro():
-        return True
+    warnings.warn(
+        "spotlift-pro binary not found on PATH. Pro features are disabled; install the binary to enable them.",
+        UserWarning,
+    )

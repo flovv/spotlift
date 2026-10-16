@@ -1,59 +1,81 @@
-"""Baseline modeling helpers for spotlift.
+"""Baseline implementations for spotlift
 
-Includes a simple moving-average baseline and a Prophet-based baseline.
-Prophet is optional (not a hard dependency for the public core). If Prophet
-isn't installed, compute_baseline_prophet will raise an informative error.
+Contains a simple moving-average baseline implementation and a small wrapper
+for Prophet-based baselines when the fbprophet/prophet package is available.
 """
+
 from typing import Optional
-
 import pandas as pd
+import numpy as np
 
 
-def moving_average_baseline(df: pd.DataFrame, value_col: str = "visits", window: int = 7) -> pd.DataFrame:
-    """Compute a centered moving average baseline.
+def compute_moving_average_baseline(
+    df: pd.DataFrame, date_col: str, metric_col: str, window: int = 7
+) -> pd.DataFrame:
+    """Compute a rolling moving-average baseline.
 
-    Returns a copy of the DataFrame with a new column "baseline".
-    Assumes df has a datetime-like index or a column named 'date'.
+    Args:
+        df: DataFrame containing a date column and a metric column.
+        date_col: Name of the date column (will be sorted and parsed).
+        metric_col: Name of the metric column to baseline.
+        window: Rolling window in days (or rows if index not a DatetimeIndex).
+
+    Returns:
+        DataFrame with an extra column "baseline" containing the rolling mean.
     """
-    working = df.copy()
-    if "date" in working.columns:
-        working = working.set_index(pd.to_datetime(working["date"]))
-    else:
-        working.index = pd.to_datetime(working.index)
+    df = df.copy()
+    # Ensure date column is datetime and sort
+    df[date_col] = pd.to_datetime(df[date_col])
+    df = df.sort_values(date_col).reset_index(drop=True)
 
-    working["baseline"] = working[value_col].rolling(window=window, center=True, min_periods=1).mean()
-    return working
-
-
-def compute_baseline_prophet(df: pd.DataFrame, value_col: str = "visits", periods: int = 0) -> pd.DataFrame:
-    """Compute a baseline using Prophet.
-
-    This function prepares a DataFrame for Prophet, fits a model, and returns
-    the in-sample fitted baseline (and optionally future forecasts if periods>0).
-
-    Note: Prophet is an optional dependency. Install via `pip install prophet`.
-    """
+    # If date column is unique daily series, set as index for rolling by time
     try:
-        from prophet import Prophet
-    except Exception as e:  # pragma: no cover - optional dependency
-        raise RuntimeError("Prophet is not installed. Install it with `pip install prophet`.\nOriginal error: %s" % e)
+        df = df.set_index(pd.DatetimeIndex(df[date_col]))
+        baseline = df[metric_col].rolling(f"{window}D", min_periods=1).mean()
+    except Exception:
+        # Fallback to row-based rolling if date-based rolling fails
+        baseline = df[metric_col].rolling(window=window, min_periods=1).mean()
 
-    working = df.copy()
-    if "date" in working.columns:
-        working["ds"] = pd.to_datetime(working["date"])
-    else:
-        working["ds"] = pd.to_datetime(working.index)
+    df = df.reset_index(drop=True)
+    df["baseline"] = baseline.values
+    return df
 
-    working["y"] = working[value_col].astype(float)
 
-    model = Prophet()
-    model.fit(working[["ds", "y"]])
+def prophet_baseline(
+    df: pd.DataFrame,
+    date_col: str,
+    metric_col: str,
+    periods: Optional[int] = None,
+    freq: str = "D",
+) -> pd.DataFrame:
+    """Fit a Prophet model and return the fitted baseline.
 
-    future = model.make_future_dataframe(periods=periods)
-    forecast = model.predict(future)
+    This wrapper attempts to import prophet (or fbprophet) and will raise a
+    clear error if the dependency is missing. Use for heavier baseline needs.
+    """
+    # Lazy import so library is optional
+    try:
+        from prophet import Prophet  # modern package name
+    except Exception:
+        try:
+            from fbprophet import Prophet  # fallback older package name
+        except Exception as exc:
+            raise ImportError(
+                "prophet (or fbprophet) package is required for prophet_baseline."
+            ) from exc
 
-    # return forecast merged with original by ds
-    out = pd.merge(forecast[["ds", "yhat"]], working, how="left", on="ds")
-    out = out.set_index("ds")
-    out.rename(columns={"yhat": "baseline"}, inplace=True)
+    model_df = df[[date_col, metric_col]].rename(columns={date_col: "ds", metric_col: "y"}).copy()
+    model_df["ds"] = pd.to_datetime(model_df["ds"])
+
+    m = Prophet()
+    m.fit(model_df)
+
+    if periods is None:
+        periods = 0
+
+    future = m.make_future_dataframe(periods=periods, freq=freq)
+    forecast = m.predict(future)
+
+    # Return forecast frame merged back with original dates
+    out = forecast[["ds", "yhat"]].rename(columns={"ds": date_col, "yhat": "baseline"})
     return out

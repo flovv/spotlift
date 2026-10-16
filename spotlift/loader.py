@@ -1,53 +1,65 @@
-"""Data loaders for common CSV exports.
+"""Data loaders and parsers for GA4 and Amazon CSV exports.
 
-Currently includes lightweight CSV parsers for GA4 (Google Analytics 4)
-and a simple Amazon response CSV format.
-
-These functions return pandas.DataFrame objects ready for modeling.
+The real exports from GA4 or Amazon APIs can have many column formats. These
+helpers provide a small, permissive normalization to a DataFrame with a
+parsed date column and preserved metric columns. They are intentionally lightweight.
 """
-from typing import List
 
+from typing import Optional
 import pandas as pd
 
 
-def load_ga4_csv(path: str, date_col: str = "date", metrics: List[str] = None) -> pd.DataFrame:
-    """Load a GA4 CSV export into a DataFrame.
+def load_csv(path: str, parse_dates: Optional[list] = None, **kwargs) -> pd.DataFrame:
+    """Load a CSV into a DataFrame, with optional date parsing.
 
-    The function tries to be forgiving about common GA4 CSV shapes: it
-    coerces the date column to datetime and keeps only the requested metrics
-    (or all numeric columns if metrics is None).
+    Args:
+        path: Path to CSV file.
+        parse_dates: List of columns to parse as dates.
+        **kwargs: Passed to pandas.read_csv
     """
-    df = pd.read_csv(path)
-    if date_col not in df.columns and "Date" in df.columns:
-        date_col = "Date"
-
-    df[date_col] = pd.to_datetime(df[date_col])
-
-    if metrics:
-        cols = [date_col] + metrics
-        missing = [c for c in cols if c not in df.columns]
-        if missing:
-            raise ValueError(f"Missing expected columns in GA4 CSV: {missing}")
-        return df[cols]
-
-    # default: keep date and all numeric cols
-    numerics = df.select_dtypes(include=["number"]).columns.tolist()
-    cols = [date_col] + numerics
-    return df[cols]
+    if parse_dates is None:
+        df = pd.read_csv(path, **kwargs)
+    else:
+        df = pd.read_csv(path, parse_dates=parse_dates, **kwargs)
+    return df
 
 
-def load_amazon_csv(path: str, date_col: str = "date", value_col: str = "purchases") -> pd.DataFrame:
-    """Load a simple Amazon responses CSV into a DataFrame.
+def _find_date_column(df: pd.DataFrame) -> Optional[str]:
+    candidates = ["date", "day", "event_date", "timestamp"]
+    for c in candidates:
+        if c in df.columns:
+            return c
+    # fallback: any column with datetime dtype
+    for c in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[c]):
+            return c
+    return None
 
-    Expects at least a date column and a numeric column with the response metric
-    (clicks, purchases, sales, etc.).
+
+def load_ga4_csv(path: str) -> pd.DataFrame:
+    """Load and lightly normalize a GA4 CSV export.
+
+    Returns a DataFrame with a `date` column (if detected) and the original metrics.
     """
-    df = pd.read_csv(path)
-    if date_col not in df.columns and "Date" in df.columns:
-        date_col = "Date"
-    df[date_col] = pd.to_datetime(df[date_col])
+    df = load_csv(path)
+    date_col = _find_date_column(df)
+    if date_col:
+        df[date_col] = pd.to_datetime(df[date_col])
+        if date_col != "date":
+            df = df.rename(columns={date_col: "date"})
+    return df
 
-    if value_col not in df.columns:
-        raise ValueError(f"Expected value column '{value_col}' not found in Amazon CSV")
 
-    return df[[date_col, value_col]]
+def load_amazon_csv(path: str) -> pd.DataFrame:
+    """Load and lightly normalize an Amazon response CSV.
+
+    Amazon exports differ by product (Advertising, Retail) — this helper parses
+    the CSV and attempts to find a date-like column.
+    """
+    df = load_csv(path)
+    date_col = _find_date_column(df)
+    if date_col:
+        df[date_col] = pd.to_datetime(df[date_col])
+        if date_col != "date":
+            df = df.rename(columns={date_col: "date"})
+    return df
