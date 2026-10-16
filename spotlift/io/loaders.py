@@ -1,17 +1,16 @@
 """I/O adapters: loaders and exporters with validation and gap checks."""
 from typing import Optional
-import pandas as pd
-import numpy as np
 
-from spotlift.contracts.schemas import validate_airings_df, validate_telemetry_df
+import pandas as pd
+
+from spotlift.contracts import schemas as contract_schemas
 from spotlift.contracts.exceptions import MissingTelemetryGapWarning
 
 
 def load_dataframe(path: str) -> pd.DataFrame:
     if path.endswith(".parquet") or path.endswith(".pq"):
         return pd.read_parquet(path)
-    else:
-        return pd.read_csv(path)
+    return pd.read_csv(path)
 
 
 def loaders_info():
@@ -19,20 +18,27 @@ def loaders_info():
 
 
 def validate_airings_df(df: pd.DataFrame) -> pd.DataFrame:
-    return validate_airings_df(df)
+    """Validate airings DataFrame via contract schema."""
+    return contract_schemas.validate_airings_df(df)
 
 
 def validate_telemetry_df(df: pd.DataFrame, timestamp_col: str = "timestamp") -> pd.DataFrame:
-    df2 = validate_telemetry_df(df)
-    # Ensure contiguous minute-level index
+    """Validate telemetry and check for minute-level gaps longer than 3 minutes."""
+    df2 = contract_schemas.validate_telemetry_df(df)
     df2[timestamp_col] = pd.to_datetime(df2[timestamp_col])
     df2 = df2.sort_values(timestamp_col).reset_index(drop=True)
+
+    if df2.empty:
+        return df2
+
     idx = pd.date_range(start=df2[timestamp_col].min(), end=df2[timestamp_col].max(), freq="T")
     if len(idx) - len(df2) > 3:
         import warnings
 
-        warnings.warn("Telemetry contains gaps longer than 3 minutes; forward-filling with rolling median.", MissingTelemetryGapWarning)
-        # Reindex and forward-fill with rolling median
+        warnings.warn(
+            "Telemetry contains gaps longer than 3 minutes; forward-filling with rolling median.",
+            MissingTelemetryGapWarning,
+        )
         df2 = df2.set_index(timestamp_col).reindex(idx)
         if "value" in df2.columns:
             df2["value"] = df2["value"].fillna(df2["value"].rolling(5, min_periods=1).median())
