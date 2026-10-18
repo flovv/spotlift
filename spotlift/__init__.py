@@ -1,7 +1,7 @@
-"""SpotLift: High-Frequency Linear TV and Connected TV (CTV) Attribution Engine.
+"""SpotLift: High-Frequency Linear TV Attribution Engine.
 
 Measures immediate minute-by-minute direct response on Google Analytics 4 (GA4)
-and multi-hour delayed conversion halo across Amazon Seller & Vendor Central.
+and multi-hour delayed conversion halo across Amazon Marketing Cloud (AMC).
 """
 
 from __future__ import annotations

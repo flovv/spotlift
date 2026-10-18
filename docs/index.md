@@ -1,24 +1,24 @@
 # SpotLift Documentation
 
-Welcome to **SpotLift**, the Python-native econometric attribution engine for Linear TV & Connected TV (CTV).
+Welcome to **SpotLift**, the Python-native econometric attribution engine for Linear TV.
 
-## High-Frequency Spot Attribution across GA4 & Amazon
+## High-Frequency Spot Attribution across GA4 & Amazon AMC
 
 Unlike legacy attribution SaaS tools that rely solely on website pixels, SpotLift measures:
 1. **Google Analytics 4 (GA4):** 1-minute resolution direct response sessions and conversions.
-2. **Amazon Seller & Vendor Central:** 36-hour distributed lag conversion halo across units, GMV, and brand search impressions.
+2. **Amazon Marketing Cloud (AMC):** Hourly resolution conversion response and PPC telemetry across units, GMV, and brand search impressions.
 3. **PPC Cannibalization:** Identifies wasted Sponsored Brands spend on branded queries during TV flights.
 
 ## Getting Started
 
-Install SpotLift via pip:
+Install SpotLift directly from GitHub:
 ```bash
-pip install spotlift
+pip install git+https://github.com/flovv/spotlift.git
 ```
 
 Try the instant demo:
 ```bash
-spotlift demo --out-dir ./demo_data
+spotlift demo
 ```
 
 ## Architectural Philosophy

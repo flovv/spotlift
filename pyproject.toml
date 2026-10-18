@@ -5,19 +5,17 @@ build-backend = "hatchling.build"
 [project]
 name = "spotlift"
 version = "0.1.0"
-description = "Econometric High-Frequency TV & CTV Attribution Engine across GA4 and Amazon"
+description = "Econometric High-Frequency Linear TV Attribution Engine across GA4 and Amazon AMC"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "SpotLift Core Team", email = "dev@spotlift.dev" }
+    { name = "SpotLift Core Team" }
 ]
 requires-python = ">=3.10"
 keywords = [
     "tv-attribution",
-    "ctv-attribution",
     "linear-tv",
     "ga4",
-    "amazon-seller-central",
     "amazon-marketing-cloud",
     "econometrics",
     "post-buy-analysis",
@@ -60,10 +58,10 @@ dev = [
 spotlift = "spotlift.cli:app"
 
 [project.urls]
-Homepage = "https://spotlift.dev"
-Documentation = "https://spotlift.dev/docs"
-Repository = "https://github.com/spotlift/spotlift"
-Changelog = "https://github.com/spotlift/spotlift/releases"
+Homepage = "https://github.com/flovv/spotlift"
+Documentation = "https://flovv.github.io/spotlift/"
+Repository = "https://github.com/flovv/spotlift"
+Changelog = "https://github.com/flovv/spotlift/releases"
 
 [tool.hatch.build.targets.wheel]
 packages = ["spotlift"]

@@ -1,25 +1,30 @@
-# SpotLift (`pip install spotlift`)
+# SpotLift
 
-[![PyPI version](https://img.shields.io/pypi/v/spotlift.svg)](https://pypi.org/project/spotlift/)
-[![Python versions](https://img.shields.io/pypi/pyversions/spotlift.svg)](https://pypi.org/project/spotlift/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Docs](https://img.shields.io/badge/docs-spotlift.dev-blue)](https://spotlift.dev)
+[![CI](https://github.com/flovv/spotlift/actions/workflows/ci.yml/badge.svg)](https://github.com/flovv/spotlift/actions/workflows/ci.yml)
+[![Python versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://github.com/flovv/spotlift)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://flovv.github.io/spotlift/)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skill-tv--to--web--measurement-purple)](skills/tv-to-web-measurement/SKILL.md)
 
 **Turn TV airing logs and web traffic into a reproducible campaign response analysis.**
 
-SpotLift is a Python-native econometric engine engineered to measure the immediate visitor response of **Linear TV and Connected TV (CTV)** broadcast airings against minute-level **Google Analytics 4 (GA4)** web traffic and **Amazon Marketing Cloud (AMC)** telemetry.
+SpotLift is a Python-native econometric engine engineered to measure the immediate visitor response of **Linear TV** broadcast airings against minute-level **Google Analytics 4 (GA4)** web traffic and **Amazon Marketing Cloud (AMC)** telemetry.
 
 ---
 
 ## Quickstart: Inspectable Demo in 1 Command
 
-SpotLift includes a realistic synthetic benchmark flight requiring **zero external credentials or API keys**. Generate the dataset, run attribution, and view an inspectable report in a single command:
+SpotLift includes a realistic synthetic benchmark flight requiring **zero external credentials or API keys**. Install and run an inspectable diagnostic attribution pass in a single command:
 
 ```bash
-pip install spotlift
+# Install directly from GitHub:
+pip install git+https://github.com/flovv/spotlift.git
+
+# Run instant diagnostic demo:
 spotlift demo
 ```
+
+*(PyPI publication pending: `pip install spotlift`)*
 
 ### Inspectable Terminal Output:
 ```text
@@ -77,13 +82,13 @@ SpotLift preserves **signed residuals** (`clip_negative=False` by default) so ba
 
 ## Data Contracts & Required Columns
 
-### A. TV Broadcast Airings Log (Schaltplan)
+### A. Linear TV Broadcast Airings Log (Schaltplan)
 File format: `.csv` or `.parquet`.
 | Column Name | Type | Required? | Units & Conventions | Description |
 | :--- | :--- | :---: | :--- | :--- |
 | `spot_id` | String / Int | **Yes** | Alphanumeric | Unique airing identifier (e.g. `SPT_1001`). |
 | `timestamp` | Datetime | **Yes** | ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) | Broadcast start time. If naive, specify `tz` during load. |
-| `channel` | String | **Yes** | Station name | Broadcast channel (e.g. `RTL`, `ProSieben`, `VOX`, `Hulu`). |
+| `channel` | String | **Yes** | Station name | Broadcast channel (e.g. `RTL`, `ProSieben`, `VOX`, `Sat.1`). |
 | `creative_id` | String | **Yes** | Identifier | Ad creative / motif name (e.g. `CRT_BRAND_30S`). |
 | `cost` | Float | **Yes** | Net currency (€, $, £) | Net broadcast spend for the spot. |
 | `grp` | Float | Optional | Gross Rating Points | Audience rating points (defaults to `0.0` if omitted). |
@@ -131,7 +136,7 @@ When two or more spots air within the 8-minute response window on different stat
 
 | Feature | Open-Source Core (`spotlift`) | SpotLift Pro (`spotlift-pro`) |
 | :--- | :---: | :---: |
-| **Licensing** | Public MIT (PyPI) | Proprietary Compiled Wheel |
+| **Licensing** | Public MIT | Proprietary Compiled Wheel |
 | **Pydantic Validation (Schaltplan & Telemetry)** | ✅ Included | ✅ Included |
 | **21-day Diurnal Rolling Median Baseline** | ✅ Included | ✅ Included |
 | **Pre-Spot Multiplicative Scaling ($\alpha_k$)** | ✅ Included | ✅ Included |
@@ -209,7 +214,9 @@ cp skills/tv-to-web-measurement/SKILL.md .agent/skills/tv-to-web-measurement/
 
 ---
 
-## AI Retrieval Index
+## Documentation & AI Retrieval Index
 
-- LLM Summary Index: [`https://spotlift.dev/llms.txt`](https://spotlift.dev/llms.txt)
-- Full Technical Reference: [`https://spotlift.dev/llms-full.txt`](https://spotlift.dev/llms-full.txt)
+- **Documentation Site:** [`https://flovv.github.io/spotlift/`](https://flovv.github.io/spotlift/)
+- **Documentation Source:** [`docs/`](docs/)
+- **LLM Summary Index:** [`docs/public/llms.txt`](docs/public/llms.txt)
+- **Full Technical Reference:** [`docs/public/llms-full.txt`](docs/public/llms-full.txt)

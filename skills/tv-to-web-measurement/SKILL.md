@@ -1,13 +1,13 @@
 ---
 name: tv-to-web-measurement
-description: Analyze broadcast TV and Connected TV (CTV) airing logs against minute-level web session telemetry. Calibrates 21-day diurnal baselines, measures incremental visitor lift and Cost Per Incremental Visit (CPIV), detects prime-time spot collisions, and produces clear, actionable executive summaries for marketers.
+description: Analyze broadcast Linear TV airing logs against minute-level web session telemetry. Calibrates 21-day diurnal baselines, measures incremental visitor lift and Cost Per Incremental Visit (CPIV), detects prime-time spot collisions, and produces clear, actionable executive summaries for marketers.
 metadata:
   icon: analytics
 ---
 
 # TV-to-Web Measurement Skill (`tv-to-web-measurement`)
 
-This skill equips agents with domain expertise and workflows to measure high-frequency TV and Connected TV (CTV) incremental response on web traffic (Google Analytics 4).
+This skill equips agents with domain expertise and workflows to measure high-frequency Linear TV incremental response on web traffic (Google Analytics 4).
 
 > [!IMPORTANT]
 > **Division of Responsibilities:**
@@ -18,7 +18,7 @@ This skill equips agents with domain expertise and workflows to measure high-fre
 
 ## 1. When to Activate This Skill
 
-Activate this skill whenever a user asks questions or provides data related to broadcast TV, CTV, or linear ad attribution:
+Activate this skill whenever a user asks questions or provides data related to Linear TV or broadcast ad attribution:
 * *"I have a TV airing schedule (CSV) and our Google Analytics 4 minute sessions. Can you calculate the lift and cost per incremental visit for each spot?"*
 * *"We ran TV ads on German stations last week. Which channels and creatives drove the highest web traffic spikes?"*
 * *"How do I measure the immediate direct response of our TV campaign using web analytics?"*

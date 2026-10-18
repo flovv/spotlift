@@ -1,8 +1,8 @@
 # SpotLift Full API, Mathematical Specification & LLM Reference
 
 ## 1. Executive Summary & Purpose
-SpotLift is an econometric, Python-native library designed to measure the short-term direct response and multi-hour conversion halo of Linear TV and Connected TV (CTV) commercial broadcasts (Schaltpläne).
-It natively ingests minute-level Google Analytics 4 (GA4) sessions/conversions and hourly Amazon Seller/Vendor Central sales, search impressions, and Sponsored Brands PPC telemetry.
+SpotLift is an econometric, Python-native library designed to measure the short-term direct response and multi-hour conversion halo of Linear TV commercial broadcasts (Schaltpläne).
+It natively ingests minute-level Google Analytics 4 (GA4) sessions/conversions and hourly Amazon Marketing Cloud (AMC) sales, search impressions, and Sponsored Brands PPC telemetry.
 
 Target Personas:
 - Media Planners & TV Attribution Analysts at performance media agencies.

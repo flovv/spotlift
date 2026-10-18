@@ -24,7 +24,7 @@ from spotlift.pro.installer import install_pro
 
 app = typer.Typer(
     name="spotlift",
-    help="High-Frequency Linear TV & Connected TV (CTV) Attribution Engine.",
+    help="High-Frequency Linear TV Attribution Engine.",
     no_args_is_help=True,
 )
 console = Console()
