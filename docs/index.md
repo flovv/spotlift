@@ -25,3 +25,6 @@ spotlift demo
 - **Local Execution:** No raw broadcast or customer telemetry ever leaves your environment.
 - **Unbundled & Focused:** Strictly dedicated to high-frequency temporal spot attribution (no spatial matched-market holdouts or Bayesian MMM priors mixed in).
 - **Extensible:** Open-Core foundation on PyPI with high-performance compiled Cython extension for complex multi-spot prime-time overlaps.
+
+## SpotLift Pro
+For multi-spot prime-time collision deconvolution, 36-hour Amazon AMC halo modeling, and automated executive reporting, obtain a license key at the [Polar.sh Checkout](https://buy.polar.sh/polar_cl_eHd0shvN1nvDYVV59IkhvvPDNw4Rxmu77INZ023fbF4).

@@ -150,6 +150,10 @@ When two or more spots air within the 8-minute response window on different stat
 | **Creative Wear-Out (Daypart Fixed Effects)** | ❌ | ✅ OLS Decay Regression |
 | **Interactive Client HTML & Excel Export** | ❌ | ✅ Standalone Decks (White-Label) |
 
+> [!TIP]
+> **Need deconvolution for prime-time spot collisions and Amazon AMC halo modeling?**
+> Obtain a license key instantly via [Polar.sh Checkout](https://buy.polar.sh/polar_cl_eHd0shvN1nvDYVV59IkhvvPDNw4Rxmu77INZ023fbF4), then activate with `spotlift auth --key <YOUR_KEY>`.
+
 ---
 
 ## Command Line Interface (CLI)
