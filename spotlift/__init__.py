@@ -1,12 +1,151 @@
-"""spotlift package
+"""SpotLift: High-Frequency Linear TV and Connected TV (CTV) Attribution Engine.
 
-Top-level exports and version.
+Measures immediate minute-by-minute direct response on Google Analytics 4 (GA4)
+and multi-hour delayed conversion halo across Amazon Seller & Vendor Central.
 """
+
+from __future__ import annotations
+
+import sys
+
+import pandas as pd
+
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
+from spotlift.contracts.exceptions import (
+    MissingTelemetryGapWarning,
+    ProFeatureNotInstalledError,
+    ProLicenseError,
+    SchemaValidationError,
+    SpotliftError,
+    TelemetryGapError,
+)
+from spotlift.contracts.schemas import (
+    AiringLogSchema,
+    SpotAttributionRecord,
+    TelemetryStreamSchema,
+)
+from spotlift.core.single_spot import analyze_spots_core
+from spotlift.io.fixtures import generate_dach_benchmark_dataset
+from spotlift.io.loaders import load_airings, load_telemetry
+from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_bigquery_sql
+from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
+from spotlift.pro.installer import install_pro
 
 __version__ = "0.1.0"
 
-from .core.single_spot import analyze_spots, SpotLiftResult as _SpotLiftResult
-from .pro.installer import verify_and_install as install_pro
-from .cli import app
 
-__all__ = ["analyze_spots", "install_pro", "app", "__version__"]
+def analyze_spots(
+    airings: pd.DataFrame,
+    web_telemetry: pd.DataFrame,
+    window_minutes: int = 8,
+    pre_window_minutes: int = 15,
+    baseline_days: int = 21,
+    clip_negative: bool = False,
+) -> pd.DataFrame:
+    """Open-source core entry point.
+
+    Computes 21-day diurnal baseline, exact single-spot lift, collision clusters,
+    and prints the diagnostic summary report.
+
+    Args:
+        airings: Validated TV/CTV airing log DataFrame (AiringLogSchema).
+        web_telemetry: Validated GA4 minute-level session DataFrame (TelemetryStreamSchema).
+        window_minutes: Post-spot treatment response window W_post in minutes (default: 8).
+        pre_window_minutes: Pre-spot calibration baseline anchor window W_pre (default: 15).
+        baseline_days: Trailing history window in days for diurnal median estimation (default: 21).
+        clip_negative: If False (default), preserves signed lift (allowing negative lift to
+            prevent upward noise rectification bias). If True, clips lift at 0.0.
+
+    Returns:
+        pd.DataFrame containing spot-level attribution metrics.
+    """
+    return analyze_spots_core(
+        airings=airings,
+        web_telemetry=web_telemetry,
+        window_minutes=window_minutes,
+        pre_window_minutes=pre_window_minutes,
+        baseline_days=baseline_days,
+        clip_negative=clip_negative,
+    )
+
+
+def analyze_omnichannel_pro(
+    airings: pd.DataFrame,
+    web_telemetry: pd.DataFrame,
+    amazon_telemetry: pd.DataFrame | None = None,
+    api_key: str | None = None,
+    window_minutes: int = 8,
+    amazon_lag_hours: int = 36,
+    export_html: str | None = None,
+    export_excel: str | None = None,
+    white_label_config: dict | None = None,
+    clip_negative: bool = False,
+) -> dict:
+    """Pro entry point (dispatches to compiled `spotlift_pro` binary).
+
+    Runs Shifted-Gamma EM multi-spot deconvolution, Dual-Stage Amazon Distributed Lag,
+    Amazon Branded PPC Cannibalization audit, Creative Wear-Out modeling, and HTML/Excel export.
+    Raises PermissionError / ProFeatureNotInstalledError if `spotlift_pro` is not installed or key is invalid.
+
+    Args:
+        airings: Airing log DataFrame.
+        web_telemetry: GA4 session telemetry DataFrame.
+        amazon_telemetry: Optional Amazon hourly orders and PPC telemetry DataFrame.
+        api_key: Polar.sh license key (or set SPOTLIFT_API_KEY environment variable).
+        window_minutes: Minute-level web response window (default: 8).
+        amazon_lag_hours: Finite distributed lag horizon for Amazon orders (default: 36).
+        export_html: Optional file path to output single-file interactive client HTML report.
+        export_excel: Optional file path to output multi-tab Excel post-buy workbook.
+        white_label_config: Agency branding dict (agency_name, logo_url, primary_color_hex).
+        clip_negative: If False (default), preserves signed lift (allowing negative lift to
+            prevent upward noise rectification bias). If True, clips lift at 0.0.
+
+    Returns:
+        dict containing 'spots_df', 'creative_wearout', 'efficiency_matrices',
+        'amazon_halo_summary', 'cannibalization_summary', and file export paths.
+    """
+    return dispatch_omnichannel_pro(
+        airings=airings,
+        web_telemetry=web_telemetry,
+        amazon_telemetry=amazon_telemetry,
+        api_key=api_key,
+        window_minutes=window_minutes,
+        amazon_lag_hours=amazon_lag_hours,
+        export_html=export_html,
+        export_excel=export_excel,
+        white_label_config=white_label_config,
+        clip_negative=clip_negative,
+    )
+
+
+__all__ = [
+    "HAS_PRO",
+    "AiringLogSchema",
+    "MissingTelemetryGapWarning",
+    "ProFeatureNotInstalledError",
+    "ProLicenseError",
+    "SchemaValidationError",
+    "SpotAttributionRecord",
+    "SpotliftError",
+    "TelemetryGapError",
+    "TelemetryStreamSchema",
+    "__version__",
+    "analyze_omnichannel_pro",
+    "analyze_spots",
+    "generate_amc_telemetry_sql",
+    "generate_dach_benchmark_dataset",
+    "generate_ga4_bigquery_sql",
+    "install_pro",
+    "is_pro_available",
+    "load_airings",
+    "load_telemetry",
+]

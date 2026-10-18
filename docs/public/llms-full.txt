@@ -1,0 +1,81 @@
+# SpotLift Full API, Mathematical Specification & LLM Reference
+
+## 1. Executive Summary & Purpose
+SpotLift is an econometric, Python-native library designed to measure the short-term direct response and multi-hour conversion halo of Linear TV and Connected TV (CTV) commercial broadcasts (Schaltpläne).
+It natively ingests minute-level Google Analytics 4 (GA4) sessions/conversions and hourly Amazon Seller/Vendor Central sales, search impressions, and Sponsored Brands PPC telemetry.
+
+Target Personas:
+- Media Planners & TV Attribution Analysts at performance media agencies.
+- In-house Marketing Science / Econometrics / Growth teams.
+- E-commerce & Amazon Growth Leads assessing omnichannel TV spillover.
+
+---
+
+## 2. Mathematical Formulations
+
+### Model A: Intra-Day Diurnal Baseline with Pre-Spot Alpha Scaling (Open Core)
+Goal: Compute counterfactual organic baseline traffic $\hat{Y}_t$ at 1-minute resolution without TV influence.
+
+1. Active Response Mask:
+   $$\mathcal{T}_{\text{active}} = \bigcup_{k=1}^K [t_{0,k}, t_{0,k} + W_{\text{post}}]$$
+   Clean historical minutes: $\mathcal{T}_{\text{clean}} = \mathcal{T}_{\text{all}} \setminus \mathcal{T}_{\text{active}}$.
+
+2. Rolling Diurnal Shape:
+   $$B_{d, m} = \mathrm{median}\left(\left\{ Y_\tau \;\middle|\; \tau \in \mathcal{T}_{\text{clean}}, \, \mathrm{DoW}(\tau) = d, \, \mathrm{MoD}(\tau) = m \right\}\right)$$
+   Fallback: If count < 3, pool by weekday/weekend and apply a 5-minute centered rolling median smoother.
+
+3. Pre-Spot Multiplicative Level Alignment:
+   $$\alpha_k = \mathrm{clip}\left( \frac{\sum_{t \in \mathcal{W}_{\text{pre}}(k)} Y_t + \epsilon}{\sum_{t \in \mathcal{W}_{\text{pre}}(k)} B_{d(t), m(t)} + \epsilon}, 0.5, 2.5 \right)$$
+   where $\mathcal{W}_{\text{pre}}(k) = [t_{0,k} - 15\,\mathrm{min}, t_{0,k} - 1\,\mathrm{min}] \cap \mathcal{T}_{\text{clean}}$.
+   Counterfactual baseline during spot window: $\hat{Y}_t = \alpha_k \cdot B_{d(t), m(t)}$.
+
+4. Single Spot Integration:
+   $$\hat{L}_k = \sum_{t = t_{0,k}}^{t_{0,k} + W_{\text{post}}} \max(0, Y_t - \hat{Y}_t), \quad \mathrm{CPIV}_k = \frac{\mathrm{Cost}_k}{\hat{L}_k}$$
+
+### Model B: Shifted-Gamma Expectation-Maximization Multi-Spot Deconvolution (Pro)
+Resolves overlapping prime-time broadcast collisions within clusters where $t_{0, k+1} - t_{0, k} \le W_{\text{post}}$.
+
+1. Discrete Shifted-Gamma Impulse Kernel:
+   $$g(\tau; \kappa_c, \theta_c) = (\tau + 0.5)^{\kappa_c - 1} \exp\left(-\frac{\tau + 0.5}{\theta_c}\right), \quad h_k(\tau) = \frac{g(\tau)}{\sum_{u=0}^{W_{\text{post}}} g(u)}$$
+   Default priors: $\kappa^{(0)} = 2.2, \theta^{(0)} = 1.2$.
+
+2. Latent Responsibility (E-Step):
+   $$\lambda_t^{(n)} = \epsilon + \sum_{j=1}^K \mu_j^{(n)} h_j(t - t_{0,j})$$
+   $$z_{k,t}^{(n)} = \frac{\mu_k^{(n)} h_k(t - t_{0,k})}{\lambda_t^{(n)}}$$
+
+3. Regularized Amplitude & Kernel Shape (M-Step):
+   $$\mu_k^{(n+1)} = \frac{\sum_t z_{k,t}^{(n)} S_t + \gamma \bar{\nu}_{c(k)} \max(\mathrm{GRP}_k, 0.5)}{1 + \gamma}$$
+
+### Model C: Dual-Stage TV-to-Amazon Distributed Lag Regression (Pro)
+Captures the behavioral delay between second-screen Amazon searching and later basket checkout (1 to 36 hours).
+$$\Delta O_h = \max(0, O_h - \hat{B}_h^{\mathrm{amz}})$$
+$$\min_{\boldsymbol{\beta} \ge 0, \gamma_{\mathrm{promo}} \ge 0} \sum_{h=L+1}^H \left(\Delta O_h - \sum_{\ell=0}^L \beta_\ell \tilde{S}_{h-\ell} - \gamma_{\mathrm{promo}} P_h\right)^2 + \lambda_{\mathrm{smooth}} \sum_{\ell=2}^L (\beta_\ell - 2\beta_{\ell-1} + \beta_{\ell-2})^2$$
+
+### Model D: Amazon Branded PPC Cannibalization Auditor (Pro)
+Identifies when a brand's own Sponsored Brands ads intercept organic searches triggered by TV airings.
+$$\Delta C_h^{\mathrm{ppc}} = \max(0, C_h^{\mathrm{ppc}} - \hat{B}_h^{\mathrm{ppc}})$$
+$$C_h^{\mathrm{cannib}} = \Delta C_h^{\mathrm{ppc}} \cdot (1 - \mathrm{clip}(\mathrm{SOV}_h, 0.05, 0.80))$$
+$$\text{Wasted PPC Spend} = C_h^{\mathrm{cannib}} \cdot \frac{E_h^{\mathrm{ppc}}}{\max(C_h^{\mathrm{ppc}}, 1.0)}$$
+
+---
+
+## 3. Public Python API Signatures
+
+```python
+import pandas as pd
+from typing import Optional, Tuple
+
+def load_airings(path_or_df: str | pd.DataFrame, tz: str = "UTC") -> pd.DataFrame: ...
+def load_telemetry(path_or_df: str | pd.DataFrame, tz: str = "UTC", allow_interpolation: bool = True) -> pd.DataFrame: ...
+def generate_dach_benchmark_dataset(n_days: int = 14, n_spots: int = 600, seed: int = 42) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: ...
+def analyze_spots(airings: pd.DataFrame, web_telemetry: pd.DataFrame, window_minutes: int = 8, pre_window_minutes: int = 15, baseline_days: int = 21) -> pd.DataFrame: ...
+def analyze_omnichannel_pro(airings: pd.DataFrame, web_telemetry: pd.DataFrame, amazon_telemetry: Optional[pd.DataFrame] = None, api_key: Optional[str] = None, window_minutes: int = 8, amazon_lag_hours: int = 36, export_html: Optional[str] = None, export_excel: Optional[str] = None, white_label_config: Optional[dict] = None) -> dict: ...
+def install_pro(api_key: str) -> bool: ...
+```
+
+---
+
+## 4. CLI Commands
+- `spotlift demo --out-dir ./demo_data`
+- `spotlift run --spots schaltplan.csv --web ga4.parquet [--amazon amz.csv] [--window 8] [--out results.csv]`
+- `spotlift auth --key SL_PRO_...`
