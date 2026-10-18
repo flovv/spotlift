@@ -23,6 +23,8 @@ def test_bridge_not_installed_error(monkeypatch):
 
 
 def test_bridge_missing_api_key_error(monkeypatch):
+    monkeypatch.setattr(bridge, "HAS_PRO", True)
+    monkeypatch.setattr(bridge, "spotlift_pro", object())
     monkeypatch.delenv("SPOTLIFT_API_KEY", raising=False)
 
     import pandas as pd
