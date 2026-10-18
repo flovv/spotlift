@@ -60,3 +60,30 @@ def test_print_pro_upgrade_banner(monkeypatch):
     print_diagnostic_banner(0, 0, 0, 0, 8, False, 0.0, 0.0, 0.0, None)
 
 
+def test_collision_clusters_consistent_with_integration_window():
+    # Spot 1 at 20:00:00. An 8-minute window covers [20:00, 20:08), i.e. minutes 20:00..20:07.
+    # Spot 2 at 20:07:59 floors to 20:07, which shares minute 20:07 with Spot 1.
+    # Therefore Spot 1 and Spot 2 must collide!
+    t0 = datetime(2026, 3, 15, 20, 0, 0, tzinfo=timezone.utc)
+    t_collide = t0 + timedelta(minutes=7, seconds=59)
+    # Spot 3 at 20:08:00 floors to 20:08, exactly window_minutes later, so it is isolated.
+    t_isolated = t0 + timedelta(minutes=8, seconds=0)
+
+    airings = pd.DataFrame([
+        {"spot_id": "S1", "timestamp": t0},
+        {"spot_id": "S2", "timestamp": t_collide},
+    ])
+    res = detect_collision_clusters(airings, window_minutes=8)
+    assert bool(res.iloc[0]["is_overlapping"]) is True
+    assert bool(res.iloc[1]["is_overlapping"]) is True
+
+    airings_iso = pd.DataFrame([
+        {"spot_id": "S1", "timestamp": t0},
+        {"spot_id": "S3", "timestamp": t_isolated},
+    ])
+    res_iso = detect_collision_clusters(airings_iso, window_minutes=8)
+    assert bool(res_iso.iloc[0]["is_overlapping"]) is False
+    assert bool(res_iso.iloc[1]["is_overlapping"]) is False
+
+
+

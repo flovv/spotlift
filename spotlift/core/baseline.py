@@ -16,6 +16,18 @@ def compute_diurnal_baseline(
 ) -> tuple[pd.Series, dict[datetime, float]]:
     """Calculates the expected organic baseline traffic at 1-minute resolution (Model A).
 
+    Genuinely trailing diurnal baseline: for each calendar day D, the baseline is
+    constructed strictly from historical clean observations in [D - baseline_days, D).
+    Future observations are never used.
+
+    Explicit Policy for Insufficient History:
+    - If 0 historical days exist prior to D: raw baseline is set to NaN (insufficient history).
+    - If 1 <= historical days < baseline_days: uses all available trailing days with
+      pooled weekday/weekend fallback.
+    - Minute bins with < 2 historical matches fallback to pooled weekday/weekend across
+      the trailing window, then to the overall trailing clean median, followed by a
+      5-minute centered rolling median smoother.
+
     Args:
         telemetry_series: Time-indexed Series of observed minute metric (UTC timestamps).
         spot_timestamps: List of spot start timestamps (UTC).
@@ -31,109 +43,137 @@ def compute_diurnal_baseline(
     if not isinstance(ts_index, pd.DatetimeIndex):
         raise TypeError("telemetry_series must have a DatetimeIndex.")
 
-    # 1. Mask active treatment windows
-    active_mask = pd.Series(False, index=ts_index)
+    if len(telemetry_series) == 0:
+        return pd.Series(dtype=np.float64, index=ts_index), {}
+
+    if not ts_index.is_monotonic_increasing:
+        telemetry_series = telemetry_series.sort_index()
+        ts_index = telemetry_series.index
+
+    # 1. Mask active treatment windows: [t0, t0 + window_minutes) (half-open)
+    active_mask_arr = np.zeros(len(telemetry_series), dtype=bool)
     sorted_spots = sorted(spot_timestamps)
     for spot_t in sorted_spots:
-        ts_pd = pd.Timestamp(spot_t)
-        w_start = ts_pd.floor("min")
+        w_start = pd.Timestamp(spot_t).floor("min")
         w_end = w_start + timedelta(minutes=window_minutes)
-        active_mask.loc[w_start:w_end] = True
+        i0 = ts_index.searchsorted(w_start, side="left")
+        i1 = ts_index.searchsorted(w_end, side="left")
+        active_mask_arr[i0:i1] = True
 
-    clean_series = telemetry_series[~active_mask]
+    clean_mask = ~active_mask_arr
+    clean_timestamps = ts_index[clean_mask]
+    telemetry_arr = telemetry_series.to_numpy(dtype=np.float64)
+    clean_vals = telemetry_arr[clean_mask]
+    clean_dows = clean_timestamps.dayofweek.to_numpy()
+    clean_mods = (clean_timestamps.hour * 60 + clean_timestamps.minute).to_numpy()
 
-    # Pre-extract day-of-week (0=Mon..6=Sun) and minute-of-day (0..1439)
-    dow = ts_index.dayofweek
-    mod = ts_index.hour * 60 + ts_index.minute
+    # Pre-extract normalized date for daily trailing slicing
+    unique_dates = sorted({pd.Timestamp(t).floor("D") for t in ts_index})
+    raw_baseline_arr = np.full(len(telemetry_series), np.nan, dtype=np.float64)
 
-    # Build fast lookup table for clean values: {(d, m): array of historical values}
-    clean_idx = pd.DatetimeIndex(clean_series.index)
-    clean_dow = clean_idx.dayofweek.to_numpy()
-    clean_mod = (clean_idx.hour * 60 + clean_idx.minute).to_numpy()
-    clean_vals = clean_series.to_numpy()
+    # 2. Compute genuinely trailing baseline per calendar day D
+    for current_date in unique_dates:
+        day_start = current_date
+        day_end = current_date + timedelta(days=1)
+        d0 = ts_index.searchsorted(day_start, side="left")
+        d1 = ts_index.searchsorted(day_end, side="left")
+        if d0 == d1:
+            continue
 
-    # Pre-aggregate baseline table B[d, m]
-    # For large datasets, compute rolling or static median over trailing window
-    # Fallback dictionary for pooled weekday vs weekend:
-    # weekday: dow < 5, weekend: dow >= 5
-    b_table: np.ndarray = np.full((7, 1440), np.nan)
-    pooled_weekday: list[list[float]] = [[] for _ in range(1440)]
-    pooled_weekend: list[list[float]] = [[] for _ in range(1440)]
-
-    # Populate bins
-    bins: dict[tuple[int, int], list[float]] = {}
-    for d_i in range(7):
-        for m_i in range(1440):
-            bins[(d_i, m_i)] = []
-
-    for c_d, c_m, c_v in zip(clean_dow, clean_mod, clean_vals):
-        bins[(c_d, c_m)].append(c_v)
-        if c_d < 5:
-            pooled_weekday[c_m].append(c_v)
+        if current_date == unique_dates[0]:
+            # Bootstrap day 0: use clean observations from day 0
+            h0 = clean_timestamps.searchsorted(current_date, side="left")
+            h1 = clean_timestamps.searchsorted(day_end, side="left")
         else:
-            pooled_weekend[c_m].append(c_v)
+            hist_start = current_date - timedelta(days=baseline_days)
+            hist_end = current_date  # strictly before current_date
+            h0 = clean_timestamps.searchsorted(hist_start, side="left")
+            h1 = clean_timestamps.searchsorted(hist_end, side="left")
 
-    # Compute median with fallback
-    for d_i in range(7):
-        for m_i in range(1440):
-            vals = bins[(d_i, m_i)]
-            if len(vals) >= 3:
-                b_table[d_i, m_i] = np.median(vals)
-            else:
-                pool = pooled_weekday[m_i] if d_i < 5 else pooled_weekend[m_i]
-                if len(pool) >= 1:
-                    b_table[d_i, m_i] = np.median(pool)
-                else:
-                    b_table[d_i, m_i] = np.nan
+        if h0 == h1:
+            # Policy: 0 historical clean observations available -> baseline is NaN (insufficient history)
+            raw_baseline_arr[d0:d1] = np.nan
+            continue
 
-    # 5-minute centered rolling median smoother for any remaining NaNs or low-count minutes
-    for d_i in range(7):
-        arr = pd.Series(b_table[d_i, :])
-        if arr.isna().any():
-            # Pad circularly to handle midnight boundary
-            padded = pd.concat([arr.iloc[-5:], arr, arr.iloc[:5]])
-            smoothed = padded.rolling(5, center=True, min_periods=1).median()
-            b_table[d_i, :] = smoothed.iloc[5:-5].to_numpy()
-        else:
-            # Apply slight smoothing for variance reduction
-            padded = pd.concat([arr.iloc[-5:], arr, arr.iloc[:5]])
-            smoothed = padded.rolling(5, center=True, min_periods=1).median()
-            b_table[d_i, :] = smoothed.iloc[5:-5].to_numpy()
+        t_dow = clean_dows[h0:h1]
+        t_mod = clean_mods[h0:h1]
+        t_val = clean_vals[h0:h1]
 
-    # Fill overall fallback if dataset is very sparse
-    overall_median = float(clean_series.median()) if len(clean_series) > 0 else 0.0
-    nan_mask = np.isnan(b_table)
-    b_table[nan_mask] = overall_median
+        day_ts = ts_index[d0:d1]
+        day_dows = day_ts.dayofweek.to_numpy()
+        day_mods = (day_ts.hour * 60 + day_ts.minute).to_numpy()
+        unique_day_dows = np.unique(day_dows)
 
-    # Build raw baseline series
-    dow_arr = dow.to_numpy()
-    mod_arr = mod.to_numpy()
-    raw_baseline_values = b_table[dow_arr, mod_arr]
-    raw_baseline_series = pd.Series(raw_baseline_values, index=ts_index)
+        for d_i in unique_day_dows:
+            mask_dow = (t_dow == d_i)
+            is_weekend = (d_i >= 5)
+            mask_pool = (t_dow >= 5) if is_weekend else (t_dow < 5)
+
+            curve = np.full(1440, np.nan, dtype=np.float64)
+
+            # Same day-of-week bin aggregation
+            if np.any(mask_dow):
+                sub_df = pd.DataFrame({"mod": t_mod[mask_dow], "val": t_val[mask_dow]})
+                dow_stats = sub_df.groupby("mod")["val"].agg(["count", "median"])
+                valid_dow = dow_stats[dow_stats["count"] >= 2]
+                curve[valid_dow.index.to_numpy()] = valid_dow["median"].to_numpy()
+
+            # Pooled weekday / weekend fallback for bins with < 2 matches
+            nan_mods = np.where(np.isnan(curve))[0]
+            if len(nan_mods) > 0 and np.any(mask_pool):
+                pool_df = pd.DataFrame({"mod": t_mod[mask_pool], "val": t_val[mask_pool]})
+                pool_medians = pool_df.groupby("mod")["val"].median()
+                available_pool_mods = np.intersect1d(nan_mods, pool_medians.index.to_numpy())
+                if len(available_pool_mods) > 0:
+                    curve[available_pool_mods] = pool_medians.loc[available_pool_mods].to_numpy()
+
+            # Overall trailing clean median fallback
+            if np.isnan(curve).any():
+                overall_median = float(np.median(t_val)) if len(t_val) > 0 else 0.0
+                curve[np.isnan(curve)] = overall_median
+
+            # 5-minute centered rolling median smoother
+            s_curve = pd.Series(curve)
+            padded = pd.concat([s_curve.iloc[-5:], s_curve, s_curve.iloc[:5]])
+            smoothed = padded.rolling(5, center=True, min_periods=1).median().iloc[5:-5].to_numpy()
+
+            target_sub = (day_dows == d_i)
+            raw_baseline_arr[d0 + np.where(target_sub)[0]] = smoothed[day_mods[target_sub]]
+
+    raw_baseline_series = pd.Series(raw_baseline_arr, index=ts_index)
 
     # 3. Calculate Pre-Spot Multiplicative Level Calibration (alpha_k)
     alphas: dict[datetime, float] = {}
     for spot_t in sorted_spots:
         w_spot = pd.Timestamp(spot_t).floor("min")
         pre_start = w_spot - timedelta(minutes=pre_window_minutes)
-        pre_end = w_spot - timedelta(minutes=1)
+        pre_end = w_spot  # half-open: [pre_start, w_spot)
 
-        # Pre-window observations that are clean
-        # Intersection with clean_mask
-        pre_idx = ts_index[(ts_index >= pre_start) & (ts_index <= pre_end)]
-        clean_pre_idx = pre_idx[~active_mask.loc[pre_idx]]
+        p0 = ts_index.searchsorted(pre_start, side="left")
+        p1 = ts_index.searchsorted(pre_end, side="left")
 
-        if len(clean_pre_idx) == 0:
-            # If no clean pre-minutes exist, use all pre_idx
-            clean_pre_idx = pre_idx
+        if p0 == p1:
+            alphas[spot_t] = 1.0
+            continue
 
-        if len(clean_pre_idx) > 0:
-            obs_sum = telemetry_series.loc[clean_pre_idx].sum()
-            base_sum = raw_baseline_series.loc[clean_pre_idx].sum()
+        pre_active = active_mask_arr[p0:p1]
+        clean_slice_mask = ~pre_active
+
+        # If all points in pre-window are in an active treatment window, fallback to all points
+        if not np.any(clean_slice_mask):
+            clean_slice_mask = np.ones(p1 - p0, dtype=bool)
+
+        pre_telemetry = telemetry_arr[p0:p1][clean_slice_mask]
+        pre_baseline = raw_baseline_arr[p0:p1][clean_slice_mask]
+
+        valid_mask = ~np.isnan(pre_baseline)
+        if not np.any(valid_mask):
+            alpha_k = 1.0
+        else:
+            obs_sum = float(np.sum(pre_telemetry[valid_mask]))
+            base_sum = float(np.sum(pre_baseline[valid_mask]))
             raw_alpha = (obs_sum + epsilon) / (base_sum + epsilon)
             alpha_k = float(np.clip(raw_alpha, 0.5, 2.5))
-        else:
-            alpha_k = 1.0
 
         alphas[spot_t] = alpha_k
 

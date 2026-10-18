@@ -131,14 +131,29 @@ def run(
         "--clip-negative",
         help="If True, clips negative lifts at 0.0. Defaults to False (unbiased signed lift).",
     ),
+    tz: str = typer.Option(
+        "UTC",
+        "--tz",
+        "-z",
+        help="Timezone assumed if input timestamps are naive (e.g. Europe/Berlin, UTC, US/Eastern).",
+    ),
+    allow_interpolation: bool = typer.Option(
+        False,
+        "--allow-interpolation",
+        help="If True, linearly interpolates minor telemetry gaps <= 3 min.",
+    ),
 ) -> None:
     """Executes attribution analysis across broadcast TV, web sessions, and Amazon sales."""
     import spotlift as sl
 
     console.print("[bold blue]Loading data files...[/bold blue]")
-    airings_df = sl.load_airings(spots)
-    web_df = sl.load_telemetry(web)
-    amz_df = sl.load_telemetry(amazon) if amazon else None
+    airings_df = sl.load_airings(spots, tz=tz)
+    web_df = sl.load_telemetry(web, tz=tz, allow_interpolation=allow_interpolation)
+    amz_df = (
+        sl.load_telemetry(amazon, tz=tz, allow_interpolation=allow_interpolation)
+        if amazon
+        else None
+    )
 
     effective_key = api_key or os.getenv("SPOTLIFT_API_KEY")
 

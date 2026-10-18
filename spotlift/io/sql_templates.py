@@ -72,15 +72,16 @@ WITH raw_sessions AS (
   WHERE
     _TABLE_SUFFIX BETWEEN '{clean_start}' AND '{clean_end}'
     AND event_name = 'session_start'
-    -- Direct and Organic filter to exclude concurrent paid digital campaigns (Meta, Google Search, TikTok)
-    AND (
-      traffic_source.medium IS NULL
-      OR LOWER(traffic_source.medium) IN ('(none)', 'organic', 'referral')
-      OR (
-        (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'medium') IS NULL
-        OR LOWER((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'medium')) IN ('(none)', 'organic', 'referral')
-      )
-    )
+    -- Direct and Organic filter to exclude concurrent paid digital campaigns (Meta, Google Search, TikTok, affiliates)
+    -- 1. Exclude any explicit paid medium in user acquisition or event parameters
+    AND LOWER(COALESCE(traffic_source.medium, '')) NOT IN ('cpc', 'cpm', 'cpv', 'cpa', 'ppc', 'paid', 'paidsearch', 'paidsocial', 'display', 'affiliate')
+    AND LOWER(COALESCE((SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'medium'), '')) NOT IN ('cpc', 'cpm', 'cpv', 'cpa', 'ppc', 'paid', 'paidsearch', 'paidsocial', 'display', 'affiliate')
+    -- 2. Require strictly direct or organic traffic (referrals excluded)
+    AND LOWER(COALESCE(
+      (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'medium'),
+      traffic_source.medium,
+      '(none)'
+    )) IN ('(none)', 'organic', 'direct', '(direct)')
   GROUP BY
     1, 2
 ){conversions_cte}

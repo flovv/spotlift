@@ -14,8 +14,7 @@ from spotlift.io.fixtures import generate_dach_benchmark_dataset
     reason="Requires spotlift_pro compiled binary (proprietary extension)",
 )
 def test_end_to_end_omnichannel_pro(tmp_path: Path):
-    os.environ["SPOTLIFT_MOCK_AUTH"] = "1"
-    os.environ["SPOTLIFT_API_KEY"] = "SL_TEST_PRO_KEY"
+    os.environ["SPOTLIFT_API_KEY"] = "SL_TEST_AGENCY_PRO_KEY"
 
     airings, ga4, amz = generate_dach_benchmark_dataset(n_days=3, n_spots=30, seed=42)
 
@@ -26,7 +25,7 @@ def test_end_to_end_omnichannel_pro(tmp_path: Path):
         airings=airings,
         web_telemetry=ga4,
         amazon_telemetry=amz,
-        api_key="SL_TEST_PRO_KEY",
+        api_key="SL_TEST_AGENCY_PRO_KEY",
         window_minutes=8,
         amazon_lag_hours=24,
         export_html=str(html_file),

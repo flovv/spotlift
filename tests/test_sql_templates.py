@@ -49,3 +49,18 @@ def test_generate_amc_telemetry_sql_with_campaigns():
         campaign_ids=["CAMP_A", "CAMP_B"],
     )
     assert "AND campaign_id IN ('CAMP_A', 'CAMP_B')" in sql
+
+
+def test_generate_ga4_bigquery_sql_excludes_paid_traffic_strictly():
+    sql = generate_ga4_bigquery_sql(
+        project_id="my-proj",
+        dataset_id="analytics_12345",
+    )
+    # Check strict exclusion filter for paid media
+    assert "traffic_source.medium" in sql
+    assert "'cpc', 'cpm', 'cpv'" in sql
+    assert "UNNEST(event_params)" in sql
+    # Referral must NOT be in the allowed medium whitelist
+    assert "'(none)', 'organic', 'direct', '(direct)'" in sql
+    assert "'referral'" not in sql
+

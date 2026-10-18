@@ -7,6 +7,7 @@ PodPositionType = Literal["first", "second", "middle", "penultimate", "last"]
 
 ChannelSourceType = Literal[
     "ga4_direct_organic_sessions",
+    "ga4_sessions",
     "ga4_conversions",
     "amz_ordered_units",
     "amz_ordered_gmv",
@@ -19,16 +20,18 @@ AttributionMethodType = Literal[
     "single_spot_diurnal_exact",
     "naive_proportional_fallback",
     "pro_em_shifted_gamma",
+    "insufficient_coverage",
+    "insufficient_history",
 ]
 
 
 class AiringLogSchema(BaseModel):
-    """Standardized broadcast TV / CTV airing log row (Schaltplan)."""
+    """Standardized broadcast TV airing log row (Schaltplan)."""
     spot_id: str = Field(..., min_length=1, description="Unique airing identifier")
     timestamp: datetime = Field(..., description="Timezone-aware UTC spot start timestamp")
     channel: str = Field(..., min_length=1, description="Station name e.g. ProSieben, RTL, Joyn")
     creative_id: str = Field(..., min_length=1, description="Creative variant identifier")
-    duration_sec: int = Field(..., gt=0, le=300, description="Spot length in seconds")
+    duration_sec: int = Field(default=30, gt=0, le=300, description="Spot length in seconds")
     cost: float = Field(..., ge=0.0, description="Net media spend in currency units")
     grp: float = Field(default=0.0, ge=0.0, description="Gross Rating Points or Reach index")
     program_genre: str | None = Field(default=None, description="Program genre e.g. Entertainment")
@@ -47,7 +50,10 @@ class AiringLogSchema(BaseModel):
 class TelemetryStreamSchema(BaseModel):
     """High-frequency GA4 (1-minute) or Amazon (1-minute / 1-hour) observation row."""
     timestamp: datetime = Field(..., description="Timezone-aware UTC bucket timestamp")
-    channel_source: ChannelSourceType
+    channel_source: ChannelSourceType = Field(
+        default="ga4_direct_organic_sessions",
+        description="Source identifier (e.g. ga4_direct_organic_sessions, ga4_sessions)",
+    )
     value: float = Field(..., ge=0.0, description="Observed metric count or currency value")
     promo_active: bool = Field(
         default=False,
@@ -74,12 +80,15 @@ class SpotAttributionRecord(BaseModel):
     creative_id: str
     cost: float
     grp: float
-    baseline_volume: float
-    observed_volume: float
-    incremental_lift: float
-    cpiv: float | None
-    is_overlapping: bool
-    collision_cluster_id: int | None
+    duration_sec: int = 30
+    program_genre: str | None = None
+    pod_position: PodPositionType | None = None
+    baseline_volume: float | None = None
+    observed_volume: float | None = None
+    incremental_lift: float | None = None
+    cpiv: float | None = None
+    is_overlapping: bool = False
+    collision_cluster_id: int | None = None
     attribution_method: AttributionMethodType
 
     # Populated only when spotlift_pro is active and Amazon telemetry is supplied

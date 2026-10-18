@@ -19,6 +19,9 @@ def integrate_isolated_spot(
 ) -> dict:
     """Exact trapezoidal lift integration for an isolated (non-overlapping) TV spot.
 
+    Uses half-open interval [t0, t0 + window_minutes) containing exactly window_minutes
+    discrete 1-minute observations.
+
     Args:
         spot: Series representing single airing row.
         telemetry_series: Minute-indexed observed traffic series.
@@ -34,23 +37,67 @@ def integrate_isolated_spot(
     t0 = pd.Timestamp(spot["timestamp"]).floor("min")
     t_end = t0 + timedelta(minutes=window_minutes)
 
-    window_idx = telemetry_series.index[(telemetry_series.index >= t0) & (telemetry_series.index <= t_end)]
-    if len(window_idx) == 0:
-        obs_vol = 0.0
-        base_vol = 0.0
-        lift = 0.0
-    else:
-        obs_vals = telemetry_series.loc[window_idx].to_numpy()
-        calibrated_base = alpha * raw_baseline_series.loc[window_idx].to_numpy()
-        diff = obs_vals - calibrated_base
-        surplus = np.maximum(0.0, diff) if clip_negative else diff
-        obs_vol = float(np.sum(obs_vals))
-        base_vol = float(np.sum(calibrated_base))
-        lift = float(np.sum(surplus))
-        if clip_negative and lift < 0.0:
-            lift = 0.0
-
+    # Half-open response window: [t0, t_end) -> exactly window_minutes minute buckets
+    window_idx = telemetry_series.index[(telemetry_series.index >= t0) & (telemetry_series.index < t_end)]
     cost = float(spot["cost"])
+    grp = float(spot.get("grp", 0.0)) if pd.notna(spot.get("grp")) else 0.0
+    duration_sec = int(spot.get("duration_sec", 30)) if pd.notna(spot.get("duration_sec")) else 30
+    program_genre = spot.get("program_genre", None)
+    pod_position = spot.get("pod_position", None)
+
+    # Policy 1: Full or partial missing coverage in telemetry
+    if len(window_idx) < window_minutes:
+        return {
+            "spot_id": spot["spot_id"],
+            "timestamp": spot["timestamp"],
+            "channel": spot["channel"],
+            "creative_id": spot["creative_id"],
+            "duration_sec": duration_sec,
+            "cost": cost,
+            "grp": grp,
+            "program_genre": program_genre,
+            "pod_position": pod_position,
+            "baseline_volume": None,
+            "observed_volume": None,
+            "incremental_lift": None,
+            "cpiv": None,
+            "is_overlapping": False,
+            "collision_cluster_id": None,
+            "attribution_method": "insufficient_coverage",
+        }
+
+    # Policy 2: Insufficient trailing history for baseline
+    base_vals = raw_baseline_series.loc[window_idx]
+    if base_vals.isna().any():
+        return {
+            "spot_id": spot["spot_id"],
+            "timestamp": spot["timestamp"],
+            "channel": spot["channel"],
+            "creative_id": spot["creative_id"],
+            "duration_sec": duration_sec,
+            "cost": cost,
+            "grp": grp,
+            "program_genre": program_genre,
+            "pod_position": pod_position,
+            "baseline_volume": None,
+            "observed_volume": None,
+            "incremental_lift": None,
+            "cpiv": None,
+            "is_overlapping": False,
+            "collision_cluster_id": None,
+            "attribution_method": "insufficient_history",
+        }
+
+    obs_vals = telemetry_series.loc[window_idx].to_numpy(dtype=np.float64)
+    calibrated_base = alpha * base_vals.to_numpy(dtype=np.float64)
+    diff = obs_vals - calibrated_base
+    surplus = np.maximum(0.0, diff) if clip_negative else diff
+    obs_vol = float(np.sum(obs_vals))
+    base_vol = float(np.sum(calibrated_base))
+    lift = float(np.sum(surplus))
+    if clip_negative and lift < 0.0:
+        lift = 0.0
+
     cpiv = (cost / lift) if lift > 0 else None
 
     return {
@@ -58,8 +105,11 @@ def integrate_isolated_spot(
         "timestamp": spot["timestamp"],
         "channel": spot["channel"],
         "creative_id": spot["creative_id"],
+        "duration_sec": duration_sec,
         "cost": cost,
-        "grp": float(spot.get("grp", 0.0)),
+        "grp": grp,
+        "program_genre": program_genre,
+        "pod_position": pod_position,
         "baseline_volume": round(base_vol, 2),
         "observed_volume": round(obs_vol, 2),
         "incremental_lift": round(lift, 2),
@@ -82,6 +132,7 @@ def integrate_proportional_fallback(
 
     Allocates surplus traffic at each minute proportionally to spot weight:
         w_k = max(GRP_k, Cost_k, 1.0)
+    Uses half-open intervals [t0, t0 + window_minutes).
     """
     n_spots = len(cluster_spots)
     cluster_id = cluster_spots["collision_cluster_id"].iloc[0]
@@ -99,19 +150,79 @@ def integrate_proportional_fallback(
         w = grp if grp > 0.0 else (cost if cost > 0.0 else 1.0)
         weights.append(w)
 
-    # Find total time span of cluster
     min_t = min(t0 for t0, _, _ in spot_intervals)
     max_t = max(t_end for _, t_end, _ in spot_intervals)
 
-    cluster_time_idx = telemetry_series.index[(telemetry_series.index >= min_t) & (telemetry_series.index <= max_t)]
+    cluster_time_idx = telemetry_series.index[
+        (telemetry_series.index >= min_t) & (telemetry_series.index < max_t)
+    ]
 
-    # Compute baseline across cluster using average alpha of cluster spots
-    mean_alpha = float(np.mean([alphas.get(row["timestamp"], 1.0) for _, row in cluster_spots.iterrows()]))
+    mean_alpha = float(
+        np.mean([alphas.get(row["timestamp"], 1.0) for _, row in cluster_spots.iterrows()])
+    )
+
+    results = []
+    # Check if cluster telemetry or baseline is insufficient
+    for i, (_, row) in enumerate(cluster_spots.iterrows()):
+        t0 = row["timestamp"].floor("min")
+        t_end = t0 + timedelta(minutes=window_minutes)
+        s_idx = telemetry_series.index[(telemetry_series.index >= t0) & (telemetry_series.index < t_end)]
+        cost = float(row["cost"])
+        grp = float(row.get("grp", 0.0)) if pd.notna(row.get("grp")) else 0.0
+        duration_sec = int(row.get("duration_sec", 30)) if pd.notna(row.get("duration_sec")) else 30
+        program_genre = row.get("program_genre", None)
+        pod_position = row.get("pod_position", None)
+
+        if len(s_idx) < window_minutes:
+            results.append({
+                "spot_id": row["spot_id"],
+                "timestamp": row["timestamp"],
+                "channel": row["channel"],
+                "creative_id": row["creative_id"],
+                "duration_sec": duration_sec,
+                "cost": cost,
+                "grp": grp,
+                "program_genre": program_genre,
+                "pod_position": pod_position,
+                "baseline_volume": None,
+                "observed_volume": None,
+                "incremental_lift": None,
+                "cpiv": None,
+                "is_overlapping": True,
+                "collision_cluster_id": cluster_id,
+                "attribution_method": "insufficient_coverage",
+            })
+        elif raw_baseline_series.loc[s_idx].isna().any():
+            results.append({
+                "spot_id": row["spot_id"],
+                "timestamp": row["timestamp"],
+                "channel": row["channel"],
+                "creative_id": row["creative_id"],
+                "duration_sec": duration_sec,
+                "cost": cost,
+                "grp": grp,
+                "program_genre": program_genre,
+                "pod_position": pod_position,
+                "baseline_volume": None,
+                "observed_volume": None,
+                "incremental_lift": None,
+                "cpiv": None,
+                "is_overlapping": True,
+                "collision_cluster_id": cluster_id,
+                "attribution_method": "insufficient_history",
+            })
+        else:
+            # We will calculate attribution below
+            pass
+
+    # If any spot failed coverage, return early with marked results
+    if len(results) == n_spots:
+        return results
+
     calibrated_base_series = mean_alpha * raw_baseline_series.loc[cluster_time_idx]
     diff_series = telemetry_series.loc[cluster_time_idx] - calibrated_base_series
     surplus_series = np.maximum(0.0, diff_series) if clip_negative else diff_series
 
-    # Minute-by-minute proportional distribution
     spot_attributed_lift = [0.0] * n_spots
     spot_observed_vol = [0.0] * n_spots
     spot_baseline_vol = [0.0] * n_spots
@@ -120,7 +231,7 @@ def integrate_proportional_fallback(
         surplus_t = surplus_series.loc[t]
         active_indices = [
             i for i, (t0, t_end, _) in enumerate(spot_intervals)
-            if t0 <= t <= t_end
+            if t0 <= t < t_end
         ]
 
         if active_indices:
@@ -134,21 +245,24 @@ def integrate_proportional_fallback(
                 spot_observed_vol[i] += obs_t * share
                 spot_baseline_vol[i] += base_t * share
 
-    results = []
+    valid_results = []
     for i, (_, row) in enumerate(cluster_spots.iterrows()):
         cost = float(row["cost"])
         lift = spot_attributed_lift[i]
-        if clip_negative and lift < 0.0:
-            lift = 0.0
+        grp = float(row.get("grp", 0.0)) if pd.notna(row.get("grp")) else 0.0
+        duration_sec = int(row.get("duration_sec", 30)) if pd.notna(row.get("duration_sec")) else 30
         cpiv = (cost / lift) if lift > 0 else None
 
-        results.append({
+        valid_results.append({
             "spot_id": row["spot_id"],
             "timestamp": row["timestamp"],
             "channel": row["channel"],
             "creative_id": row["creative_id"],
+            "duration_sec": duration_sec,
             "cost": cost,
-            "grp": float(row.get("grp", 0.0)),
+            "grp": grp,
+            "program_genre": row.get("program_genre", None),
+            "pod_position": row.get("pod_position", None),
             "baseline_volume": round(spot_baseline_vol[i], 2),
             "observed_volume": round(spot_observed_vol[i], 2),
             "incremental_lift": round(lift, 2),
@@ -158,7 +272,7 @@ def integrate_proportional_fallback(
             "attribution_method": "naive_proportional_fallback",
         })
 
-    return results
+    return valid_results
 
 
 def analyze_spots_core(
@@ -169,14 +283,10 @@ def analyze_spots_core(
     baseline_days: int = 21,
     clip_negative: bool = False,
 ) -> pd.DataFrame:
-    """Core open-source attribution algorithm.
+    """Core econometric engine: calculates trailing diurnal baselines and single-spot attribution."""
+    if airings.empty:
+        return pd.DataFrame()
 
-    1. Validates inputs & extracts GA4 organic sessions.
-    2. Clusters colliding prime-time spots.
-    3. Computes 21-day diurnal rolling median baseline + pre-spot alpha calibration.
-    4. Exact integration for isolated spots, proportional fallback for colliding spots.
-    5. Outputs diagnostic terminal summary banner.
-    """
     # Detect collision clusters
     clustered_airings = detect_collision_clusters(airings, window_minutes=window_minutes)
 
@@ -190,10 +300,9 @@ def analyze_spots_core(
     else:
         sessions_df = web_telemetry
 
-    # Ensure minute series indexed by datetime
     telemetry_series = sessions_df.set_index("timestamp")["value"].sort_index()
 
-    # Compute diurnal baseline and alphas
+    # Compute trailing diurnal baseline and alphas
     spot_timestamps = clustered_airings["timestamp"].tolist()
     raw_baseline_series, alphas = compute_diurnal_baseline(
         telemetry_series=telemetry_series,
@@ -234,20 +343,23 @@ def analyze_spots_core(
 
     result_df = pd.DataFrame(records).sort_values("timestamp").reset_index(drop=True)
 
-    # Check for Amazon telemetry presence in caller context
     has_amazon = False
     if "channel_source" in web_telemetry.columns:
         has_amazon = bool((web_telemetry["channel_source"].str.startswith("amz_")).any())
 
-    # Summary metrics for diagnostic banner
+    # Summary metrics: only include spots with valid (non-insufficient) attribution
     total_spots = len(result_df)
-    n_channels = int(result_df["channel"].nunique()) if total_spots > 0 else 0
-    n_isolated = int((~result_df["is_overlapping"]).sum())
-    n_overlapping = int(result_df["is_overlapping"].sum())
-    web_observed = float(result_df["observed_volume"].sum())
-    web_baseline = float(result_df["baseline_volume"].sum())
-    web_lift = float(result_df["incremental_lift"].sum())
-    valid_cpivs = result_df["cpiv"].dropna()
+    valid_spots = result_df[result_df["incremental_lift"].notna()]
+    insufficient_spots = result_df[result_df["incremental_lift"].isna()]
+    n_insufficient = len(insufficient_spots)
+
+    n_channels = int(valid_spots["channel"].nunique()) if len(valid_spots) > 0 else 0
+    n_isolated = int((~valid_spots["is_overlapping"]).sum()) if len(valid_spots) > 0 else 0
+    n_overlapping = int(valid_spots["is_overlapping"].sum()) if len(valid_spots) > 0 else 0
+    web_observed = float(valid_spots["observed_volume"].sum()) if len(valid_spots) > 0 else 0.0
+    web_baseline = float(valid_spots["baseline_volume"].sum()) if len(valid_spots) > 0 else 0.0
+    web_lift = float(valid_spots["incremental_lift"].sum()) if len(valid_spots) > 0 else 0.0
+    valid_cpivs = valid_spots["cpiv"].dropna()
     mean_cpiv = float(valid_cpivs.mean()) if len(valid_cpivs) > 0 else None
 
     print_diagnostic_banner(
@@ -261,6 +373,7 @@ def analyze_spots_core(
         web_baseline=web_baseline,
         web_lift=web_lift,
         mean_cpiv=mean_cpiv,
+        n_insufficient=n_insufficient,
     )
 
     return result_df

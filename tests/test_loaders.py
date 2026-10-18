@@ -144,3 +144,32 @@ def test_load_telemetry_errors(tmp_path: Path):
     with pytest.raises(TelemetryGapError, match="detected during active spot window"):
         load_telemetry(window_gap_df, allow_interpolation=False, active_spot_windows=active_windows)
 
+
+def test_load_telemetry_validates_all_rows_and_rejects_negative_row_111():
+    from spotlift.contracts.exceptions import SchemaValidationError
+
+    times = pd.date_range("2026-03-15 00:00:00", periods=120, freq="1min", tz="UTC")
+    values = [10.0] * 120
+    values[111] = -5.0  # Invalid negative value beyond row 100
+    df = pd.DataFrame({
+        "timestamp": times,
+        "value": values,
+        "channel_source": "ga4_direct_organic_sessions",
+    })
+    with pytest.raises(SchemaValidationError, match="Telemetry record 111 invalid"):
+        load_telemetry(df)
+
+
+def test_load_telemetry_rejects_coarse_hourly_web_data():
+    from spotlift.contracts.exceptions import SchemaValidationError
+
+    times = pd.date_range("2026-03-15 00:00:00", periods=24, freq="1h", tz="UTC")
+    df = pd.DataFrame({
+        "timestamp": times,
+        "value": [100.0] * 24,
+        "channel_source": "ga4_direct_organic_sessions",
+    })
+    with pytest.raises(SchemaValidationError, match="coarse granularity"):
+        load_telemetry(df)
+
+

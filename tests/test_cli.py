@@ -22,7 +22,8 @@ def test_cli_demo(tmp_path: Path):
     assert "Sample Attributed Airings" in result.output
 
 
-def test_cli_run(tmp_path: Path):
+def test_cli_run(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("SPOTLIFT_API_KEY", raising=False)
     out_dir = tmp_path / "run_test"
     # Generate data first
     runner.invoke(app, ["demo", "--out-dir", str(out_dir), "--days", "2", "--spots", "10"])

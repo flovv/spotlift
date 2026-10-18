@@ -78,3 +78,54 @@ def test_baseline_pre_window_empty():
     )
     assert alphas[start] == 1.0
 
+
+def test_baseline_strictly_trailing_no_future_leakage():
+    # Day 0 to Day 2 at 100.0
+    start = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    times_3d = [start + timedelta(minutes=i) for i in range(3 * 1440)]
+    telemetry_3d = pd.Series([100.0] * len(times_3d), index=pd.DatetimeIndex(times_3d))
+
+    # Airing on Day 2 at 12:00
+    spot_t = start + timedelta(days=2, hours=12)
+    base_3d, _ = compute_diurnal_baseline(telemetry_3d, spot_timestamps=[spot_t], baseline_days=7)
+    val_before = base_3d.loc[spot_t]
+
+    # Now add Day 3 through Day 10 with high traffic (500.0)
+    times_10d = [start + timedelta(minutes=i) for i in range(10 * 1440)]
+    values_10d = [100.0 if t < start + timedelta(days=3) else 500.0 for t in times_10d]
+    telemetry_10d = pd.Series(values_10d, index=pd.DatetimeIndex(times_10d))
+
+    base_10d, _ = compute_diurnal_baseline(telemetry_10d, spot_timestamps=[spot_t], baseline_days=7)
+    val_after = base_10d.loc[spot_t]
+
+    # Future observations must NOT alter earlier baselines (zero leakage)
+    assert val_before == pytest.approx(100.0)
+    assert val_after == pytest.approx(100.0)
+    assert val_after == val_before
+
+
+def test_baseline_days_parameter_honored():
+    # Construct 10 days where Day 0..7 has 100.0, but Day 8 has 300.0
+    start = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    times = [start + timedelta(minutes=i) for i in range(10 * 1440)]
+    values = []
+    for t in times:
+        if start + timedelta(days=8) <= t < start + timedelta(days=9):
+            values.append(300.0)
+        else:
+            values.append(100.0)
+    telemetry = pd.Series(values, index=pd.DatetimeIndex(times))
+
+    # Spot on Day 9 at 12:00
+    spot_t = start + timedelta(days=9, hours=12)
+
+    # baseline_days=1 uses ONLY Day 8 (clean median 300.0)
+    base_1d, _ = compute_diurnal_baseline(telemetry, spot_timestamps=[spot_t], baseline_days=1)
+    # baseline_days=7 uses Days 2..8 (clean median 100.0, since 6 days at 100 vs 1 day at 300)
+    base_7d, _ = compute_diurnal_baseline(telemetry, spot_timestamps=[spot_t], baseline_days=7)
+
+    assert base_1d.loc[spot_t] == pytest.approx(300.0, rel=1e-2)
+    assert base_7d.loc[spot_t] == pytest.approx(100.0, rel=1e-2)
+    assert base_1d.loc[spot_t] != base_7d.loc[spot_t]
+
+
