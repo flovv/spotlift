@@ -11,7 +11,7 @@ import httpx
 from spotlift.contracts.exceptions import ProLicenseError
 
 POLAR_VALIDATE_URL = "https://api.polar.sh/v1/customer-portal/license-keys/validate"
-POLAR_ORG_ID = "org_spotlift_production"
+POLAR_ORG_ID = os.getenv("POLAR_ORG_ID", "cf960093-fdd2-4be6-aaef-0db3d5005f77")
 WHEEL_INDEX_URL = "https://wheels.spotlift.dev/simple"
 
 
