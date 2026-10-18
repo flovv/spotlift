@@ -56,3 +56,9 @@ demo_output/
 demo_test/
 run_test/
 pro_run_test/
+
+# Node / VitePress
+node_modules/
+.vitepress/dist/
+.vitepress/cache/
+
