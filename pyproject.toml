@@ -1,0 +1,91 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spotlift"
+version = "0.1.0"
+description = "Econometric High-Frequency TV & CTV Attribution Engine across GA4 and Amazon"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "SpotLift Core Team", email = "dev@spotlift.dev" }
+]
+requires-python = ">=3.10"
+keywords = [
+    "tv-attribution",
+    "ctv-attribution",
+    "linear-tv",
+    "ga4",
+    "amazon-seller-central",
+    "amazon-marketing-cloud",
+    "econometrics",
+    "post-buy-analysis",
+    "shifted-gamma",
+    "media-mix-modeling"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scipy>=1.10.0",
+    "pydantic>=2.5.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "httpx>=0.25.0",
+    "pyarrow>=14.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.8.0",
+    "ruff>=0.2.0",
+]
+
+[project.scripts]
+spotlift = "spotlift.cli:app"
+
+[project.urls]
+Homepage = "https://spotlift.dev"
+Documentation = "https://spotlift.dev/docs"
+Repository = "https://github.com/spotlift/spotlift"
+Changelog = "https://github.com/spotlift/spotlift/releases"
+
+[tool.hatch.build.targets.wheel]
+packages = ["spotlift"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+ignore = ["B008", "S110", "BLE001"]
+
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pandas.*",
+    "scipy.*",
+    "spotlift_pro.*",
+]
+ignore_missing_imports = true

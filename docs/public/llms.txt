@@ -1,0 +1,40 @@
+# SpotLift
+> Python-native econometric library for minute-by-minute Linear TV and CTV attribution across Google Analytics 4 (GA4) and Amazon Seller/Vendor Central.
+
+## Core Capabilities
+- **Open-Source Core (`pip install spotlift`):**
+  - 21-day diurnal rolling median baseline de-trending with 15-minute pre-spot level calibration.
+  - Minute-level single-spot incremental lift integration for GA4 sessions and conversions.
+  - Automated overlapping spot collision detection across broadcast channels.
+- **SpotLift Pro (`spotlift.install_pro(api_key)`):**
+  - Expectation-Maximization (EM) multi-spot deconvolution using Shifted-Gamma impulse response kernels.
+  - Dual-stage TV-to-Amazon Distributed Lag attribution (linking immediate Amazon App search spikes to 1–36h delayed unit orders).
+  - Amazon Branded PPC Cannibalization Auditor (separating genuine TV organic halo from Sponsored Brands click interception) + AMC Clean Room SQL generator.
+  - Automated Post-Buy Efficiency Matrix (Station, Daypart, Program Genre, Pod Position, Creative Wear-out) exported to interactive HTML and Excel.
+
+## Quickstart
+```python
+import spotlift as sl
+
+airings = sl.load_airings("tv_schaltplan.csv")
+ga4 = sl.load_telemetry("ga4_minute_sessions.parquet")
+amz = sl.load_telemetry("amazon_hourly_orders_and_ppc.csv")
+
+# Free baseline & collision check
+report = sl.analyze_spots(airings, ga4, window_minutes=8)
+
+# Pro EM Deconvolution & Amazon Halo (requires SpotLift Pro license key)
+pro_audit = sl.analyze_omnichannel_pro(
+    airings=airings,
+    web_telemetry=ga4,
+    amazon_telemetry=amz,
+    export_html="client_tv_postbuy_audit.html"
+)
+```
+
+## Links
+- Documentation: https://spotlift.dev/docs
+- Full LLM API Reference: https://spotlift.dev/llms-full.txt
+- Benchmark Dataset: https://huggingface.co/datasets/spotlift/dach-tv-to-ga4-amazon-benchmark
+- Pro Licensing: https://spotlift.dev/pricing
+- Comparison vs TVSquared: https://spotlift.dev/vs-tvsquared
