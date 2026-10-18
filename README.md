@@ -4,22 +4,126 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/spotlift.svg)](https://pypi.org/project/spotlift/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Docs](https://img.shields.io/badge/docs-spotlift.dev-blue)](https://spotlift.dev)
-[![Agent Skill](https://img.shields.io/badge/Agent%20Skill-SKILL.md-purple)](https://github.com/spotlift/spotlift/tree/main/skills/spotlift-attribution)
+[![Agent Skill](https://img.shields.io/badge/Agent%20Skill-tv--to--web--measurement-purple)](skills/tv-to-web-measurement/SKILL.md)
 
-A Python-native econometric attribution engine engineered to resolve high-frequency **Linear TV & Connected TV (CTV) lift** across **Google Analytics 4 (GA4)** web traffic and **Amazon Marketing Cloud (AMC)** clean room telemetry.
+**Turn TV airing logs and web traffic into a reproducible campaign response analysis.**
+
+SpotLift is a Python-native econometric engine engineered to measure the immediate visitor response of **Linear TV and Connected TV (CTV)** broadcast airings against minute-level **Google Analytics 4 (GA4)** web traffic and **Amazon Marketing Cloud (AMC)** telemetry.
 
 ---
 
-## Why SpotLift?
+## Quickstart: Inspectable Demo in 1 Command
 
-1. **Python-Native & Zero Data Leakage:** Run entire TV post-buy audits locally in your Jupyter Notebook, Databricks, or Airflow DAG. Client telemetry stays inside your perimeter.
-2. **Sub-Daily Amazon Telemetry via AMC (Not Daily Vendor Central):**
-   > [!NOTE]
-   > Standard Amazon Vendor Central and Seller Central portals only provide aggregated daily or weekly reports—never minute-level data. The **only** enterprise mechanism to capture hourly Amazon conversion response and PPC spikes is via **Amazon Marketing Cloud (AMC)** SQL clean rooms. SpotLift generates production AMC queries out of the box (`spotlift sql --source amc`).
-3. **Unbiased Signed Lift Accounting:** Non-linear clipping $\max(0, Y_t - \hat{Y}_t)$ introduces upward half-normal noise bias via Jensen's inequality ($\mathbb{E}[\max(0, \epsilon)] \approx 0.4\sigma$). SpotLift preserves signed deviations (`clip_negative=False` by default) so background noise cancels out symmetrically across spots.
-4. **Overlapping Prime-Time Collision Deconvolution:** Replaces naive proportional cost/GRP splitting with Shifted-Gamma Expectation-Maximization (EM) deconvolution to separate simultaneous broadcast spikes on competing stations (e.g. RTL vs ProSieben).
-5. **Branded PPC Cannibalization Auditor:** Quantifies the "Paid Interception Tax"—how much of your own Amazon Sponsored Brands spend merely intercepted organic TV-driven brand searches.
-6. **Agent-Ready for Autonomous Media Analytics:** Includes an official agent skill (`SKILL.md`) enabling AI coding assistants (Antigravity, Cursor, Claude Code) to autonomously formulate telemetry SQL, calibrate baselines, and compile client audit decks.
+SpotLift includes a realistic synthetic benchmark flight requiring **zero external credentials or API keys**. Generate the dataset, run attribution, and view an inspectable report in a single command:
+
+```bash
+pip install spotlift
+spotlift demo
+```
+
+### Inspectable Terminal Output:
+```text
+⚡ Generating realistic DACH TV & Omnichannel benchmark dataset (600 spots)...
+✔ Saved TV Airings to: demo_data/tv_schaltplan.csv
+✔ Saved GA4 Telemetry to: demo_data/ga4_minutes.parquet
+✔ Saved Amazon Telemetry to: demo_data/amazon_hourly.csv
+
+Running Open-Core Diagnostic Attribution Pass:
+====================================================================================
+ SPOTLIFT OPEN-CORE v0.1.0 — CAMPAIGN DIAGNOSTIC SUMMARY
+====================================================================================
+ Broadcast Schedule:        600 spots across 4 stations
+ Isolated Single Spots:     502 spots (83.7%) ──► Exact Diurnal Integration
+ Overlapping Collisions:    98 spots (16.3%) collide within 8-min window
+ Web (GA4) Observed:        1,284,520 | Baseline: 1,142,300 | Lift: +142,220
+ Mean Web CPIV (Naive):     € 10.45 (⚠️ High distortion risk on colliding spots)
+------------------------------------------------------------------------------------
+✔ Saved Attributed Spots to: demo_data/attributed_spots.csv
+```
+
+### Sample Attributed Airings (Example Report):
+| Spot ID | Timestamp (UTC) | Station | Cost | GRP | Baseline | Observed | Incremental Lift | CPIV | Status | Attribution Method |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| `SPT_1001` | 2026-03-01 10:33 | RTL | €2,150 | 1.3 | 2,739 | 2,849 | **+110.2** | €19.51 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1002` | 2026-03-01 17:37 | VOX | €866 | 1.1 | 2,434 | 2,508 | **+73.8** | €11.73 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1003` | 2026-03-01 17:53 | RTL | €2,820 | 1.9 | 2,370 | 2,637 | **+267.4** | €10.55 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1004` | 2026-03-01 21:16 | VOX | €4,350 | 4.8 | 2,151 | 2,549 | **+398.1** | €10.93 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1005` | 2026-03-01 22:51 | Joyn | €2,730 | 4.6 | 1,714 | 1,988 | **+274.0** | €9.96 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1006` | 2026-03-01 23:27 | Joyn | €349 | 0.7 | 1,473 | 1,546 | **+73.0** | €4.79 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1007` | 2026-03-02 16:03 | ProSieben | €1,080 | 0.8 | 2,199 | 2,294 | **+94.5** | €11.43 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1008` | 2026-03-02 19:49 | ProSieben | €3,750 | 2.9 | 2,028 | 2,314 | **+285.6** | €13.13 | Isolated | `single_spot_diurnal_exact` |
+
+---
+
+## Methodological Foundation & Econometric Transparency
+
+### 1. Short-Term Direct Response vs. Total Causal TV ROI
+> [!IMPORTANT]
+> **Short-Term Response is Tactical, Not Total Campaign ROI:**
+> SpotLift measures the **immediate visitor lift** arriving on your site within 5–15 minutes of a spot airing. This direct-response metric is essential for tactical post-buy decisions (optimizing station mix, daypart efficiency, and creative rotation).
+> 
+> However, **immediate web lift is NOT total causal TV ROI**. Television generates substantial delayed word-of-mouth, brand equity, retail sales (physical retail and Amazon), and durable baseline traffic over weeks and months. Full causal campaign ROI should be evaluated using aggregate econometric methods such as Marketing Mix Modeling (MMM) or randomized geo-holdout experiments.
+
+### 2. Unbiased Signed Lift Accounting
+Standard commercial attribution tools commonly clip negative minute differences to zero: $\max(0, Y_t - \hat{Y}_t)$. By Jensen's inequality, non-linear rectification turns zero-mean background traffic noise into strictly positive phantom lift ($\mathbb{E}[\max(0, \epsilon)] \approx 0.4\sigma$). 
+
+SpotLift preserves **signed residuals** (`clip_negative=False` by default) so background noise cancels out symmetrically across spots and stations, preventing artificial inflation of campaign performance.
+
+### 3. Amazon Telemetry: AMC Clean Rooms (Not Vendor Central)
+> [!NOTE]
+> Standard Amazon Vendor Central and Seller Central portals only provide aggregated daily or weekly reports—never minute or hourly data. The **only** enterprise mechanism to collect sub-daily Amazon conversion response and PPC spikes is via **Amazon Marketing Cloud (AMC)** SQL clean rooms (`amazon_attributed_events_by_traffic_time` and `sponsored_ads_traffic`). SpotLift provides built-in query generation for AMC (`spotlift sql --source amc`).
+
+---
+
+## Data Contracts & Required Columns
+
+### A. TV Broadcast Airings Log (Schaltplan)
+File format: `.csv` or `.parquet`.
+| Column Name | Type | Required? | Units & Conventions | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `spot_id` | String / Int | **Yes** | Alphanumeric | Unique airing identifier (e.g. `SPT_1001`). |
+| `timestamp` | Datetime | **Yes** | ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) | Broadcast start time. If naive, specify `tz` during load. |
+| `channel` | String | **Yes** | Station name | Broadcast channel (e.g. `RTL`, `ProSieben`, `VOX`, `Hulu`). |
+| `creative_id` | String | **Yes** | Identifier | Ad creative / motif name (e.g. `CRT_BRAND_30S`). |
+| `cost` | Float | **Yes** | Net currency (€, $, £) | Net broadcast spend for the spot. |
+| `grp` | Float | Optional | Gross Rating Points | Audience rating points (defaults to `0.0` if omitted). |
+
+### B. Web Telemetry Stream (GA4 Direct & Organic)
+File format: `.csv` or `.parquet`.
+| Column Name | Type | Required? | Units & Conventions | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `timestamp` | Datetime | **Yes** | ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) | Continuous 1-minute bucket timestamps. |
+| `value` | Float / Int | **Yes** | Count (>= 0) | Direct & Organic sessions or visits in that minute. |
+| `channel_source` | String | Optional | Stream identifier | Source label (defaults to `ga4_sessions`). |
+
+---
+
+## Common Input Errors & How to Fix Them
+
+1. **Timezone-Naive Timestamps (Temporal Misalignment):**
+   * *Problem:* Broadcast logs often use local market time (e.g. German CET/CEST), while GA4 BigQuery exports use UTC. A 1–2 hour offset completely disconnects spot airings from visitor spikes.
+   * *Fix:* Pass the local timezone to `load_airings()`:
+     ```python
+     airings = sl.load_airings("schaltplan.csv", tz="Europe/Berlin") # Automatically converts to UTC
+     ```
+2. **Missing Minute Intervals (Zero-Traffic Gaps):**
+   * *Problem:* GA4 reporting often omits minutes with zero traffic rather than recording `value = 0`.
+   * *Fix:* SpotLift's `load_telemetry()` automatically aligns timestamps to a complete 1-minute grid and interpolates minor gaps ($\le 3$ min). If a gap $> 3$ min occurs during an active spot response window, SpotLift raises a `TelemetryGapError` to prevent biased integration.
+3. **Non-Standard Column Headers:**
+   * *Problem:* Media agencies export logs with columns like `Sendetermin`, `Sender`, `Netto`, or `Sessions`.
+   * *Fix:* Rename headers prior to loading:
+     ```python
+     df = df.rename(columns={"Sendetermin": "timestamp", "Sender": "channel", "Netto": "cost"})
+     ```
+
+---
+
+## Flagging Overlapping Spots & Collisions
+
+When two or more spots air within the 8-minute response window on different stations (common in prime-time), their post-spot visitor spikes collide.
+
+* **Single Isolated Spots:** Receive exact signed trapezoidal integration (`single_spot_diurnal_exact`).
+* **Overlapping Collisions:** Open-core SpotLift flags colliding spots (`is_overlapping=True`) and groups them into collision clusters (`collision_cluster_id`), using proportional weight as a baseline estimate. The terminal diagnostic alerts you to collision volume so you can inspect potential cross-channel attribution distortion.
 
 ---
 
@@ -35,55 +139,25 @@ A Python-native econometric attribution engine engineered to resolve high-freque
 | **Prime-Time Collision Graph Detector** | ✅ Included | ✅ Included |
 | **Telemetry SQL Generators (GA4 & Amazon AMC)** | ✅ Included (`spotlift sql`) | ✅ Included |
 | **Agentic TV Attribution Skill (`SKILL.md`)** | ✅ Included | ✅ Included |
-| **Multi-Spot Shifted-Gamma EM Deconvolution** | ❌ (Naive Fallback) | ✅ Exact Identifiability |
-| **Dual-Stage TV-to-Amazon Distributed Lag (36h)** | ❌ Banner Prompt | ✅ Non-Negative Regularized |
+| **Multi-Spot Shifted-Gamma EM Deconvolution** | ❌ (Proportional Fallback) | ✅ Exact Identifiability |
+| **Dual-Stage TV-to-Amazon Distributed Lag (36h)** | ❌ Banner Alert | ✅ Non-Negative Regularized |
 | **Amazon Branded PPC Cannibalization Auditor** | ❌ | ✅ Wasted PPC Tax Calculator |
 | **Creative Wear-Out (Daypart Fixed Effects)** | ❌ | ✅ OLS Decay Regression |
 | **Interactive Client HTML & Excel Export** | ❌ | ✅ Standalone Decks (White-Label) |
 
 ---
 
-## Quickstart (Python SDK)
-
-```bash
-pip install spotlift
-```
-
-```python
-import spotlift as sl
-
-# 1. Load and validate airing logs (Schaltplan) and GA4 telemetry
-airings = sl.load_airings("tv_schaltplan.csv")
-ga4 = sl.load_telemetry("ga4_minute_sessions.parquet")
-
-# 2. Run open-source diurnal baseline & collision check (signed lift)
-results = sl.analyze_spots(airings, ga4, window_minutes=8, clip_negative=False)
-print(results[["spot_id", "channel", "incremental_lift", "cpiv", "is_overlapping"]])
-
-# 3. Unlock SpotLift Pro (EM Deconvolution, Amazon Halo & HTML Deck)
-# sl.install_pro(api_key="SL_PRO_...")
-# pro_audit = sl.analyze_omnichannel_pro(
-#     airings=airings,
-#     web_telemetry=ga4,
-#     amazon_telemetry=sl.load_telemetry("amc_hourly.csv"),
-#     export_html="client_tv_audit.html",
-#     export_excel="client_tv_audit.xlsx",
-# )
-```
-
----
-
 ## Command Line Interface (CLI)
 
 ```bash
-# 1. Generate Telemetry Extraction SQL for GA4 BigQuery and Amazon AMC
+# 1. Generate Telemetry Extraction SQL for GA4 BigQuery or Amazon AMC
 spotlift sql --source ga4 --project my-gcp-project --dataset analytics_12345 --out ./ga4_extract.sql
 spotlift sql --source amc --start 2026-03-01 --end 2026-03-21 --out ./amc_extract.sql
 
-# 2. Generate realistic synthetic DACH benchmark dataset (14 days, 600 spots)
+# 2. Run instant synthetic demo flight
 spotlift demo --out-dir ./demo_data
 
-# 3. Run attribution on your broadcast flight
+# 3. Execute attribution on your campaign flight
 spotlift run --spots schaltplan.csv --web ga4_minutes.parquet --out results.csv
 
 # 4. Authenticate Pro license key
@@ -92,27 +166,50 @@ spotlift auth --key SL_PRO_xxxxxxxxxxxx
 
 ---
 
-## 🤖 Agentic TV Lift Analysis (`SKILL.md`)
+## Python SDK Quickstart
 
-SpotLift is designed from the ground up for agentic media analytics workflows. An AI assistant equipped with the [`spotlift-attribution` skill](https://github.com/spotlift/spotlift/tree/main/skills/spotlift-attribution/SKILL.md) can autonomously:
+```python
+import spotlift as sl
 
-1. Query your data warehouse for GA4 and AMC clean room logs using `spotlift sql`.
-2. Clean, deduplicate, and validate broadcast Schaltpläne against strict UTC schemas.
-3. Quantify station-level noise vs true causal lift using signed integration.
-4. Deconvolve prime-time spot collisions using Expectation-Maximization.
-5. Generate interactive HTML audit decks with interactive Chart.js visualizations.
+# 1. Load and validate airing logs and GA4 telemetry
+airings = sl.load_airings("tv_schaltplan.csv", tz="Europe/Berlin")
+ga4 = sl.load_telemetry("ga4_minute_sessions.parquet")
 
-To install the skill into your coding agent workspace:
-```bash
-# Copy the official skill into your agent workspace
-mkdir -p .agent/skills/spotlift-attribution
-cp skills/spotlift-attribution/SKILL.md .agent/skills/spotlift-attribution/
+# 2. Run open-source diurnal baseline & single-spot attribution
+results = sl.analyze_spots(airings, ga4, window_minutes=8, clip_negative=False)
+
+# 3. Inspect top-performing stations
+station_summary = (
+    results.groupby("channel")
+    .agg(spots=("spot_id", "count"), spend=("cost", "sum"), lift=("incremental_lift", "sum"))
+    .assign(cpiv=lambda df: df["spend"] / df["lift"])
+    .sort_values("cpiv")
+)
+print(station_summary)
 ```
 
 ---
 
-## Citation & AI Retrieval Index
+## 🤖 Agentic TV Attribution Skill (`tv-to-web-measurement`)
+
+SpotLift includes a canonical agent skill specification: [`skills/tv-to-web-measurement/SKILL.md`](skills/tv-to-web-measurement/SKILL.md).
+
+Equipped with this skill, AI coding assistants (Antigravity, Cursor, Claude Code) can:
+1. Validate client broadcast logs and GA4 telemetry schemas.
+2. Formulate partition-pruned BigQuery and AMC SQL queries.
+3. Automatically detect timezone mismatches and resolve header aliases.
+4. Call SpotLift to calculate diurnal baselines and spot lifts.
+5. Synthesize plain-language post-buy executive summaries for marketing stakeholders.
+
+Install into your local agent environment:
+```bash
+mkdir -p .agent/skills/tv-to-web-measurement
+cp skills/tv-to-web-measurement/SKILL.md .agent/skills/tv-to-web-measurement/
+```
+
+---
+
+## AI Retrieval Index
 
 - LLM Summary Index: [`https://spotlift.dev/llms.txt`](https://spotlift.dev/llms.txt)
 - Full Technical Reference: [`https://spotlift.dev/llms-full.txt`](https://spotlift.dev/llms-full.txt)
-- Head-to-Head Comparison: [`SpotLift vs. TVSquared / Innovid`](https://spotlift.dev/vs-tvsquared)

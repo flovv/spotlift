@@ -18,6 +18,8 @@ def test_cli_demo(tmp_path: Path):
     assert (out_dir / "tv_schaltplan.csv").exists()
     assert (out_dir / "ga4_minutes.parquet").exists()
     assert (out_dir / "amazon_hourly.csv").exists()
+    assert (out_dir / "attributed_spots.csv").exists()
+    assert "Sample Attributed Airings" in result.output
 
 
 def test_cli_run(tmp_path: Path):

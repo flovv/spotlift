@@ -52,6 +52,7 @@ Thumbs.db
 *.swo
 
 # Local demo / test outputs
+demo_data/
 demo_output/
 demo_test/
 run_test/

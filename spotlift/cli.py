@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+import pandas as pd
 import typer
 from rich.console import Console
 
@@ -60,10 +61,59 @@ def demo(
     console.print(f"[green]✔ Saved Amazon Telemetry to:[/] {amz_path}")
 
     # Immediate diagnostic attribution pass
+    from rich.table import Table
+
     import spotlift as sl
 
     console.print("\n[bold]Running Open-Core Diagnostic Attribution Pass:[/bold]")
-    sl.analyze_spots(airings=airings, web_telemetry=ga4, window_minutes=8)
+    res_df = sl.analyze_spots(airings=airings, web_telemetry=ga4, window_minutes=8)
+
+    attributed_path = out_dir / "attributed_spots.csv"
+    res_df.to_csv(attributed_path, index=False)
+    console.print(f"[green]✔ Saved Attributed Spots to:[/] {attributed_path}\n")
+
+    # Render inspectable sample results table
+    table = Table(
+        title="Sample Attributed Airings (First 8 Spots)",
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Spot ID", style="bold")
+    table.add_column("Timestamp (UTC)", style="dim")
+    table.add_column("Channel")
+    table.add_column("Cost (€)", justify="right")
+    table.add_column("GRP", justify="right")
+    table.add_column("Baseline", justify="right")
+    table.add_column("Observed", justify="right")
+    table.add_column("Lift", justify="right", style="bold green")
+    table.add_column("CPIV (€)", justify="right")
+    table.add_column("Status", justify="center")
+
+    for _, row in res_df.head(8).iterrows():
+        lift_val = row.get("incremental_lift", 0.0)
+        lift_style = "bold green" if lift_val > 0 else ("bold red" if lift_val < 0 else "dim")
+        lift_str = f"[{lift_style}]{lift_val:+.1f}[/{lift_style}]"
+        
+        cpiv_val = row.get("cpiv")
+        cpiv_str = f"€{cpiv_val:.2f}" if pd.notna(cpiv_val) and cpiv_val is not None else "-"
+        status_str = "[yellow]Collision[/yellow]" if row.get("is_overlapping") else "[green]Isolated[/green]"
+        
+        table.add_row(
+            str(row.get("spot_id", "")),
+            str(row.get("timestamp", ""))[:16],
+            str(row.get("channel", "")),
+            f"€{float(row.get('cost', 0.0)):,.0f}",
+            f"{float(row.get('grp', 0.0)):.1f}",
+            f"{float(row.get('baseline_volume', 0.0)):.0f}",
+            f"{float(row.get('observed_volume', 0.0)):.0f}",
+            lift_str,
+            cpiv_str,
+            status_str,
+        )
+
+    console.print(table)
+    console.print(f"\n[bold]Next step:[/] Inspect full results at [underline]{attributed_path}[/underline] or run with your own files:")
+    console.print("  [cyan]spotlift run --spots your_schaltplan.csv --web your_ga4_minutes.parquet --out results.csv[/cyan]\n")
 
 
 @app.command()
