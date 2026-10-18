@@ -5,7 +5,6 @@ export default defineConfig({
   title: "SpotLift",
   description: "Python-native Econometric Linear TV Attribution Engine across GA4 and Amazon AMC",
   head: [
-    ['link', { rel: 'icon', href: '/favicon.ico' }],
     ['script', { type: 'application/ld+json' }, JSON.stringify({
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",

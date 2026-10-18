@@ -1,6 +1,6 @@
 # SpotLift
 
-[![CI](https://github.com/flovv/spotlift/actions/workflows/ci.yml/badge.svg)](https://github.com/flovv/spotlift/actions/workflows/ci.yml)
+[![CI](https://github.com/flovv/spotlift/actions/workflows/ci_tests.yml/badge.svg)](https://github.com/flovv/spotlift/actions/workflows/ci_tests.yml)
 [![Python versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://github.com/flovv/spotlift)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://flovv.github.io/spotlift/)
