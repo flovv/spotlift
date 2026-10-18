@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from spotlift.cli import app
+from spotlift.pro.bridge import is_pro_available
 
 runner = CliRunner()
 
@@ -32,6 +34,10 @@ def test_cli_run(tmp_path: Path):
     assert out_csv.exists()
 
 
+@pytest.mark.skipif(
+    not is_pro_available(),
+    reason="Requires spotlift_pro compiled binary (proprietary extension)",
+)
 def test_cli_run_pro_omnichannel(tmp_path: Path):
     out_dir = tmp_path / "pro_run_test"
     runner.invoke(app, ["demo", "--out-dir", str(out_dir), "--days", "2", "--spots", "10"])

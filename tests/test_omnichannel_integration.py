@@ -3,10 +3,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 import spotlift as sl
 from spotlift.io.fixtures import generate_dach_benchmark_dataset
 
 
+@pytest.mark.skipif(
+    not sl.pro.bridge.is_pro_available(),
+    reason="Requires spotlift_pro compiled binary (proprietary extension)",
+)
 def test_end_to_end_omnichannel_pro(tmp_path: Path):
     os.environ["SPOTLIFT_MOCK_AUTH"] = "1"
     os.environ["SPOTLIFT_API_KEY"] = "SL_TEST_PRO_KEY"
