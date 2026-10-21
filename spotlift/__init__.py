@@ -50,16 +50,6 @@ from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_b
 from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
 from spotlift.pro.installer import install_pro
 
-# Pure-Python AMC ingestion — importable without the compiled spotlift_pro binary.
-try:
-    from spotlift.pro.amc_ingestion import (
-        AMCConfig,
-        AMCIngestionError,
-        run_amc_ingestion,
-    )
-except ImportError:  # pragma: no cover
-    pass
-
 __version__ = "0.2.0"
 
 
@@ -176,8 +166,6 @@ def analyze_omnichannel_pro(
 
 __all__ = [
     "HAS_PRO",
-    "AMCConfig",
-    "AMCIngestionError",
     "AiringLogSchema",
     "BaselineFn",
     "LinearRegressionBaseline",
@@ -204,6 +192,5 @@ __all__ = [
     "is_pro_available",
     "load_airings",
     "load_telemetry",
-    "run_amc_ingestion",
     "simple_mean_baseline",
 ]
