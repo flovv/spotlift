@@ -1,9 +1,113 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
+
+
+class BaselineFn(Protocol):
+    """Protocol for callable baseline models.
+
+    A baseline function takes the observed minute-level telemetry series, spot
+    timestamps, and tunable parameters, and returns a tuple of
+    (raw_baseline_series, alphas_dict) — the expected organic traffic per
+    minute and per-spot multiplicative calibration factors.
+    """
+
+    def __call__(
+        self,
+        telemetry_series: pd.Series,
+        spot_timestamps: list[datetime],
+        **kwargs: object,
+    ) -> tuple[pd.Series, dict[datetime, float]]:
+        ...
+
+
+def simple_mean_baseline(
+    telemetry_series: pd.Series,
+    spot_timestamps: list[datetime],
+    window_minutes: int = 8,
+    pre_window_minutes: int = 15,
+    lookback_minutes: int = 120,
+    epsilon: float = 1e-5,
+    **_extra: object,
+) -> tuple[pd.Series, dict[datetime, float]]:
+    """Lightweight baseline: trailing rolling mean over ``lookback_minutes``.
+
+    Use this for campaigns with <7 days of history, or markets without
+    a clean diurnal pattern. Masks active treatment windows (spot response
+    intervals) so they don't contaminate the baseline.
+
+    Args:
+        telemetry_series: Time-indexed Series of observed minute metric (UTC).
+        spot_timestamps: List of spot start timestamps (UTC).
+        window_minutes: Treatment post-spot window length in minutes.
+        pre_window_minutes: Anchor window length in minutes for alpha calibration.
+        lookback_minutes: Rolling window for mean baseline (default: 120 min).
+        epsilon: Small numerical constant for division stability.
+
+    Returns:
+        (raw_baseline_series, pre_spot_alphas_dict)
+    """
+    ts_index = telemetry_series.index
+    if not isinstance(ts_index, pd.DatetimeIndex):
+        raise TypeError("telemetry_series must have a DatetimeIndex.")
+
+    if len(telemetry_series) == 0:
+        return pd.Series(dtype=np.float64, index=ts_index), {}
+
+    if not ts_index.is_monotonic_increasing:
+        telemetry_series = telemetry_series.sort_index()
+        ts_index = telemetry_series.index
+
+    # Mask active treatment windows
+    active_mask = np.zeros(len(telemetry_series), dtype=bool)
+    for spot_t in sorted(spot_timestamps):
+        w_start = pd.Timestamp(spot_t).floor("min")
+        w_end = w_start + timedelta(minutes=window_minutes)
+        i0 = ts_index.searchsorted(w_start, side="left")
+        i1 = ts_index.searchsorted(w_end, side="left")
+        active_mask[i0:i1] = True
+
+    clean_series = telemetry_series.where(~active_mask)
+    rolling_mean = clean_series.rolling(
+        f"{lookback_minutes}min", min_periods=10
+    ).mean()
+
+    raw_baseline = rolling_mean.fillna(telemetry_series.mean())
+
+    # Alpha calibration (same logic as diurnal baseline)
+    alphas: dict[datetime, float] = {}
+    for spot_t in sorted(spot_timestamps):
+        w_spot = pd.Timestamp(spot_t).floor("min")
+        pre_start = w_spot - timedelta(minutes=pre_window_minutes)
+        p0 = ts_index.searchsorted(pre_start, side="left")
+        p1 = ts_index.searchsorted(w_spot, side="left")
+
+        if p0 == p1:
+            alphas[spot_t] = 1.0
+            continue
+
+        pre_active = active_mask[p0:p1]
+        clean_slice = ~pre_active
+        if not np.any(clean_slice):
+            clean_slice = np.ones(p1 - p0, dtype=bool)
+
+        pre_obs = telemetry_series.to_numpy(dtype=np.float64)[p0:p1][clean_slice]
+        pre_base = raw_baseline.to_numpy(dtype=np.float64)[p0:p1][clean_slice]
+        valid = ~np.isnan(pre_base)
+
+        if not np.any(valid):
+            alphas[spot_t] = 1.0
+        else:
+            obs_sum = float(np.sum(pre_obs[valid]))
+            base_sum = float(np.sum(pre_base[valid]))
+            raw_alpha = (obs_sum + epsilon) / (base_sum + epsilon)
+            alphas[spot_t] = float(np.clip(raw_alpha, 0.5, 2.5))
+
+    return raw_baseline, alphas
 
 
 def compute_diurnal_baseline(
@@ -13,6 +117,7 @@ def compute_diurnal_baseline(
     pre_window_minutes: int = 15,
     baseline_days: int = 21,
     epsilon: float = 1e-5,
+    **_extra: object,
 ) -> tuple[pd.Series, dict[datetime, float]]:
     """Calculates the expected organic baseline traffic at 1-minute resolution (Model A).
 

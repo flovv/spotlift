@@ -11,9 +11,9 @@ Unlike legacy attribution SaaS tools that rely solely on website pixels, SpotLif
 
 ## Getting Started
 
-Install SpotLift directly from GitHub:
+Install SpotLift from PyPI:
 ```bash
-pip install git+https://github.com/flovv/spotlift.git
+pip install spotlift
 ```
 
 Try the instant demo:

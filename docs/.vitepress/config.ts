@@ -34,6 +34,12 @@ export default defineConfig({
           { text: 'Introduction', link: '/index' },
           { text: 'vs. Legacy Attribution SaaS', link: '/vs-tvsquared' },
         ]
+      },
+      {
+        text: 'Methodology',
+        items: [
+          { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
+        ]
       }
     ]
   }

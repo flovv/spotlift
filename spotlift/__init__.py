@@ -33,6 +33,7 @@ from spotlift.contracts.schemas import (
     SpotAttributionRecord,
     TelemetryStreamSchema,
 )
+from spotlift.core.baseline import BaselineFn, compute_diurnal_baseline, simple_mean_baseline
 from spotlift.core.conversion import (
     apply_conversion_model,
     compute_hourly_conversion_rates,
@@ -58,6 +59,7 @@ def analyze_spots(
     apply_cr_model: bool = True,
     conversions_source: str = "ga4_conversions",
     cr_window_hours: int = 1,
+    baseline_fn: BaselineFn | None = None,
 ) -> pd.DataFrame:
     """Open-source core entry point.
 
@@ -68,6 +70,11 @@ def analyze_spots(
     ``ga4_conversions``) is present in ``web_telemetry``, also annotates each
     attributed spot with ``conversion_rate`` and ``key_event_response`` (session
     lift × hourly conversion rate).
+
+    When ``baseline_fn`` is provided, uses it instead of the default diurnal
+    baseline. Pass ``simple_mean_baseline`` for campaigns with <7 days of
+    history or markets without a clean diurnal pattern. Custom callables must
+    conform to the ``BaselineFn`` protocol (see ``spotlift.core.baseline``).
 
     Args:
         airings: Validated TV/CTV airing log DataFrame (AiringLogSchema).
@@ -81,6 +88,9 @@ def analyze_spots(
             conversions data is present.
         conversions_source: Channel-source label for conversion events (default: "ga4_conversions").
         cr_window_hours: Half-width of the hour neighborhood for CR estimation (default: 1).
+        baseline_fn: Optional callable baseline model conforming to ``BaselineFn``.
+            If None, uses ``compute_diurnal_baseline`` (default). Pass
+            ``simple_mean_baseline`` for short-history campaigns.
 
     Returns:
         pd.DataFrame containing spot-level attribution metrics.
@@ -95,6 +105,7 @@ def analyze_spots(
         apply_cr_model=apply_cr_model,
         conversions_source=conversions_source,
         cr_window_hours=cr_window_hours,
+        baseline_fn=baseline_fn,
     )
 
 
@@ -150,6 +161,7 @@ def analyze_omnichannel_pro(
 __all__ = [
     "HAS_PRO",
     "AiringLogSchema",
+    "BaselineFn",
     "MissingTelemetryGapWarning",
     "ProFeatureNotInstalledError",
     "ProLicenseError",
@@ -162,6 +174,7 @@ __all__ = [
     "analyze_omnichannel_pro",
     "analyze_spots",
     "apply_conversion_model",
+    "compute_diurnal_baseline",
     "compute_hourly_conversion_rates",
     "estimate_conversion_rate_for_spot",
     "generate_amc_telemetry_sql",
@@ -171,4 +184,5 @@ __all__ = [
     "is_pro_available",
     "load_airings",
     "load_telemetry",
+    "simple_mean_baseline",
 ]

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
-from spotlift.core.baseline import compute_diurnal_baseline
+from spotlift.core.baseline import BaselineFn, compute_diurnal_baseline
 from spotlift.core.conversion import apply_conversion_model
 from spotlift.core.overlap import detect_collision_clusters, print_diagnostic_banner
 
@@ -286,12 +286,18 @@ def analyze_spots_core(
     apply_cr_model: bool = True,
     conversions_source: str = "ga4_conversions",
     cr_window_hours: int = 1,
+    baseline_fn: BaselineFn | None = None,
 ) -> pd.DataFrame:
     """Core econometric engine: calculates trailing diurnal baselines and single-spot attribution.
 
     When ``apply_cr_model`` is True (default) and a conversions channel is present
     in ``web_telemetry``, annotates each attributed spot with ``conversion_rate``
     and ``key_event_response`` (session lift × hourly CR).
+
+    When ``baseline_fn`` is provided, uses it instead of the default diurnal baseline.
+    Pass ``simple_mean_baseline`` for campaigns with <7 days of history or markets
+    without a clean diurnal pattern. Custom callables must conform to the
+    ``BaselineFn`` protocol (see ``spotlift.core.baseline``).
     """
     if airings.empty:
         return pd.DataFrame()
@@ -311,9 +317,10 @@ def analyze_spots_core(
 
     telemetry_series = sessions_df.set_index("timestamp")["value"].sort_index()
 
-    # Compute trailing diurnal baseline and alphas
+    # Compute trailing baseline and alphas
     spot_timestamps = clustered_airings["timestamp"].tolist()
-    raw_baseline_series, alphas = compute_diurnal_baseline(
+    effective_baseline_fn = baseline_fn if baseline_fn is not None else compute_diurnal_baseline
+    raw_baseline_series, alphas = effective_baseline_fn(
         telemetry_series=telemetry_series,
         spot_timestamps=spot_timestamps,
         window_minutes=window_minutes,
