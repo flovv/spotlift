@@ -1,198 +1,186 @@
 ---
 name: tv-to-web-measurement
-description: Analyze broadcast Linear TV airing logs against minute-level web session telemetry. Calibrates 21-day diurnal baselines, measures incremental visitor lift and Cost Per Incremental Visit (CPIV), detects prime-time spot collisions, and produces clear, actionable executive summaries for marketers.
+description: Measure Linear TV lift from airings and GA4 telemetry.
+version: 0.2.0
+author: flovv (flovv), Hermes Agent
+license: MIT
+platforms: [linux, macos, windows]
 metadata:
-  icon: analytics
+  hermes:
+    tags: [tv-attribution, ga4, linear-tv, broadcast, cpiV, conversion-rate]
+    related_skills: []
 ---
 
 # TV-to-Web Measurement Skill (`tv-to-web-measurement`)
 
-This skill equips agents with domain expertise and workflows to measure high-frequency Linear TV incremental response on web traffic (Google Analytics 4).
+Measures high-frequency Linear TV incremental response on web traffic (GA4):
+diurnal baselines, single-spot lift, collision detection, CPIV, and
+session-to-conversion bridging via hourly conversion rates.
 
 > [!IMPORTANT]
 > **Division of Responsibilities:**
 > * **The Engine (`spotlift`) calculates results:** Never write custom integration loops, ad-hoc regressions, or heuristic baseline algorithms. Always call `spotlift.analyze_spots()` or `spotlift run`.
-> * **The Agent validates and explains results:** Your role is to inspect inputs, normalize timezones, map schema columns, invoke SpotLift, and provide clear, plain-language business explanations to marketing stakeholders.
+> * **The Agent validates and explains results:** Your role is to inspect inputs, normalize timezones, map schema columns, invoke SpotLift, and provide plain-language business explanations.
 
 ---
 
-## 1. When to Activate This Skill
+## When to Use
 
-Activate this skill whenever a user asks questions or provides data related to Linear TV or broadcast ad attribution:
-* *"I have a TV airing schedule (CSV) and our Google Analytics 4 minute sessions. Can you calculate the lift and cost per incremental visit for each spot?"*
-* *"We ran TV ads on German stations last week. Which channels and creatives drove the highest web traffic spikes?"*
-* *"How do I measure the immediate direct response of our TV campaign using web analytics?"*
-* *"Can you check our broadcast log for overlapping prime-time spots and run attribution against our GA4 export?"*
-* *"What is our Cost Per Incremental Visitor (CPIV) by TV station?"*
-* *"Write the SQL to export minute-level direct/organic traffic from BigQuery GA4 for our TV flight."*
-* *"Our media agency gave us a post-buy report, but we want an independent verification using our actual GA4 logs."*
+Activate whenever a user provides TV/broadcast airing logs and web telemetry for attribution:
+
+- *"Calculate the lift and CPIV for each spot from our TV schedule and GA4 sessions."*
+- *"Which channels and creatives drove the highest web traffic spikes?"*
+- *"Check our broadcast log for overlapping prime-time spots and run attribution."*
+- *"Write the SQL to extract minute-level direct/organic traffic from BigQuery GA4."*
+- *"Bridge our session lift to estimated purchases using GA4 conversion events."*
+
+**Don't use for:**
+- Total campaign ROI or media mix modeling (use MMM or geo-holdout tests).
+- Delayed Amazon/retail halo attribution (requires SpotLift Pro).
+- TV schedule reconciliation or DAP/Wizzad matching (domain-specific, not supported).
 
 ---
 
-## 2. Input Data Contracts
-
-SpotLift expects two primary data streams:
+## Input Data Contracts
 
 ### A. Broadcast Airings Log (Schaltplan)
-Each row represents a single broadcast airing:
-| Required Field | Standard Type | Description |
-| :--- | :--- | :--- |
-| `spot_id` | String / Int | Unique identifier for each airing (e.g. `SPT_1001`). |
-| `timestamp` | ISO 8601 Datetime | Broadcast start time with explicit timezone (e.g. `2026-03-01T20:15:00Z` or `2026-03-01 20:15:00` with specified tz). |
-| `channel` | String | Station or network name (e.g. `RTL`, `ProSieben`, `VOX`, `Hulu`). |
-| `creative_id` | String | Identifier for the ad creative/motif (e.g. `CRT_BRAND_30S`). |
-| `cost` | Float (> 0) | Net media spend in currency units (EUR, USD, GBP). |
-| `grp` | Float (>= 0) | Gross Rating Points (optional, defaults to `0.0` if omitted). |
 
-### B. Web Telemetry Stream (Google Analytics 4)
-Minute-by-minute session volume:
-| Required Field | Standard Type | Description |
+| Required Field | Type | Description |
 | :--- | :--- | :--- |
-| `timestamp` | ISO 8601 Datetime | Minute bucket timestamp (e.g. `2026-03-01T20:15:00Z`). |
-| `value` | Float / Int (>= 0) | Direct & organic session count in that minute. |
-| `channel_source`| String | Stream identifier (defaults to `ga4_sessions` if omitted). |
+| `spot_id` | String/Int | Unique airing identifier |
+| `timestamp` | ISO 8601 Datetime | Broadcast start time with explicit timezone |
+| `channel` | String | Station or network name |
+| `creative_id` | String | Ad creative/motif identifier |
+| `cost` | Float (>0) | Net media spend in currency units |
+| `grp` | Float (>=0) | Gross Rating Points (optional, defaults to 0.0) |
+
+### B. Web Telemetry (GA4)
+
+| Required Field | Type | Description |
+| :--- | :--- | :--- |
+| `timestamp` | ISO 8601 Datetime | Minute bucket timestamp |
+| `value` | Float/Int (>=0) | Session or conversion count in that minute |
+| `channel_source` | String | Stream identifier (e.g. `ga4_direct_organic_sessions`, `ga4_conversions`) |
 
 > [!NOTE]
-> Web telemetry must be filtered strictly for **Direct & Organic** traffic. Paid search (Google Ads) and paid social (Meta, TikTok) should be excluded so that paid digital ads running concurrently do not distort broadcast response.
+> Session telemetry must be filtered for **Direct & Organic** traffic only. Exclude paid search/social so concurrent digital campaigns don't distort broadcast response. The conversion-rate bridge requires a `ga4_conversions` channel source in the same telemetry.
 
 ---
 
-## 3. When the Agent MUST STOP and Request Missing Information
+## Stop Conditions
 
-Before running attribution, inspect the input data. **STOP and ask the user for clarification** if any of the following conditions occur:
+Before running attribution, inspect the input data. **STOP and ask the user** if:
 
-1. **Ambiguous or Missing Timezone:**
-   * If timestamps have no timezone offset (e.g., `2026-03-01 20:15:00`), you cannot assume UTC. Broadcast logs are typically recorded in the broadcaster's local timezone (e.g., `Europe/Berlin` for DACH, `America/New_York` for US East), while GA4 export timestamps may be UTC.
-   * *Stop Prompt:* `"Your broadcast log timestamps do not include a timezone offset. To prevent misaligning the TV spots with web traffic by 1–2 hours, please confirm: Were these broadcast airings recorded in local time (e.g. Europe/Berlin) or UTC?"`
-2. **Missing Essential Columns:**
-   * If the airings log lacks `cost` or `channel`, or telemetry lacks `value` (sessions) and no obvious column aliases exist, ask the user to identify the correct columns.
-3. **Mismatched Date Ranges:**
-   * If the TV flight spans March 1–14, but web telemetry only covers March 15–30, stop and notify the user that no overlap exists.
-4. **Coarse Telemetry Grain (> 1 Minute):**
-   * If web traffic is provided at hourly or daily granularity, explain that TV spot attribution requires minute-level grain (response occurs within 5–15 minutes). Offer to generate the BigQuery GA4 extraction query using `spotlift sql --source ga4`.
+1. **Ambiguous timezone:** Timestamps have no offset. Broadcast logs are usually local time (e.g. `Europe/Berlin`); GA4 exports may be UTC. Confirm before proceeding.
+2. **Missing essential columns:** Airings lacks `cost` or `channel`; telemetry lacks `value`. Ask for column mapping.
+3. **No date overlap:** TV flight and telemetry ranges don't intersect.
+4. **Coarse telemetry grain:** Web traffic is hourly or daily, not minute-level. Offer `spotlift sql --source ga4` to generate the BigQuery extraction query.
 
 ---
 
-## 4. Column Mapping Guide
+## Column Mapping
 
-Users often provide tables with agency-specific column headers. Map them automatically to SpotLift's schema:
+Users often provide agency-specific headers. Map them to SpotLift's schema:
 
-| Target Column | Common Aliases in User Data |
+| Target | Common Aliases |
 | :--- | :--- |
-| `timestamp` | `airing_time`, `datetime`, `broadcast_time`, `sendetermin`, `datum_uhrzeit`, `air_date` |
-| `channel` | `station`, `sender`, `network`, `tv_station`, `channel_name` |
-| `creative_id` | `creative`, `spot_name`, `motif`, `sujet`, `ad_id`, `commercial` |
-| `cost` | `spend`, `net_cost`, `brutto_kosten`, `netto_kosten`, `price`, `media_spend` |
+| `timestamp` | `airing_time`, `datetime`, `sendetermin`, `datum_uhrzeit` |
+| `channel` | `station`, `sender`, `network`, `tv_station` |
+| `creative_id` | `creative`, `motif`, `sujet`, `ad_id` |
+| `cost` | `spend`, `net_cost`, `netto_kosten`, `media_spend` |
 | `grp` | `ratings`, `trps`, `audience_share` |
 | `value` | `sessions`, `visits`, `traffic`, `users`, `pageviews` |
 
-Example mapping code:
-```python
-# Rename user columns to match SpotLift schema
-airings_df = airings_df.rename(columns={
-    "Sendetermin": "timestamp",
-    "Sender": "channel",
-    "Motiv": "creative_id",
-    "Netto": "cost",
-    "Ratings": "grp",
-})
-```
-
 ---
 
-## 5. Execution: Running SpotLift (Free Open-Core)
+## Execution
 
-SpotLift's core functionality is 100% free and open-source without any API key or license.
+### Python SDK
 
-### Option A: Python SDK
 ```python
 import spotlift as sl
 
-# 1. Load data with timezone normalization (e.g. local German broadcast to UTC)
+# 1. Load data with timezone normalization
 airings = sl.load_airings("schaltplan.csv", tz="Europe/Berlin")
 telemetry = sl.load_telemetry("ga4_minutes.parquet")
 
-# 2. Execute diurnal baseline and exact single-spot lift
+# 2. Run attribution with conversion-rate bridge
 results = sl.analyze_spots(
     airings=airings,
     web_telemetry=telemetry,
-    window_minutes=8,       # 8-minute post-spot treatment window
-    pre_window_minutes=15,  # 15-minute pre-spot anchor window
-    baseline_days=21,       # 21-day rolling median baseline
-    clip_negative=False,    # Unbiased signed lift (prevents upward noise bias)
+    window_minutes=8,          # post-spot treatment window
+    pre_window_minutes=15,     # pre-spot anchor window
+    baseline_days=21,          # trailing diurnal baseline
+    clip_negative=False,       # preserve signed lift
+    apply_cr_model=True,       # bridge session lift → key_event_response
+    conversions_source="ga4_conversions",
 )
 
-# 3. Export results
+# 3. Export
 results.to_csv("spot_attribution_results.csv", index=False)
 ```
 
-### Option B: Command Line Interface (CLI)
-```bash
-# Generate synthetic dataset for immediate testing (no credentials needed)
-spotlift demo --out-dir ./demo_data
+### CLI
 
-# Run attribution on client files
+```bash
+spotlift demo --out-dir ./demo_data        # synthetic DACH dataset
 spotlift run --spots schaltplan.csv --web ga4_minutes.parquet --out results.csv
 ```
 
----
+### Zero-Fill Missing Minutes
 
-## 6. How the Agent Explains the Outputs
+GA4 API exports often omit zero-activity minutes. Use `zero_fill_gaps=True` to fill them instead of raising `TelemetryGapError`:
 
-When presenting results to marketers or clients, structure your explanation with four key sections:
-
-### 1. Executive Summary
-* Total broadcast spend analyzed (€ / $).
-* Total incremental web visits attributed.
-* Overall campaign Cost Per Incremental Visit (CPIV = Total Spend / Total Incremental Visits).
-* Flight dates and spot count.
-
-### 2. Station and Daypart Efficiency
-* Present a summary table ranking stations by CPIV (lowest cost per visitor = highest direct response efficiency).
-* Highlight the top-performing creative motifs.
-* Identify prime-time vs. daytime performance differences.
-
-### 3. Collision and Data Quality Diagnostics
-* Report the percentage of **isolated single spots** vs. **overlapping collision spots** (spots airing within 8 minutes of another spot on a different channel).
-* Explain that isolated spots receive exact trapezoidal integration, while colliding spots divide traffic proportionally in open-core.
-
-### 4. Important Methodological Disclaimer
-Always include this notice in client-facing post-buys:
-> [!NOTE]
-> **Short-Term Direct Response vs. Total Causal TV ROI:**
-> The incremental lift measured here reflects **immediate digital response** (visitors who typed the URL or searched the brand within 8–15 minutes of the broadcast). This metric is vital for tactical optimization (station selection, daypart allocation, creative testing), but it is **not total campaign ROI**. Television also creates delayed conversions, brand search momentum, retail sales (e.g., Amazon, physical retail), and long-term brand equity over weeks and months. Full media ROI requires econometric Marketing Mix Modeling (MMM) or geo-holdout tests.
-
----
-
-## 7. Sample Agent Interaction
-
-### User Prompt:
-> *"Here is our TV flight CSV from last week ('flight_may.csv') and our GA4 minute export ('ga4_may.parquet'). The airings were in Germany. Can you calculate the lift and tell us which channel performed best?"*
-
-### Expected Agent Output:
-```markdown
-### TV-to-Web Campaign Attribution Analysis (May 1–May 7, 2026)
-
-I have processed your broadcast schedule (`flight_may.csv`, 120 spots) against minute-level direct & organic GA4 sessions (`ga4_may.parquet`). Timestamps were localized from `Europe/Berlin` to UTC.
-
-#### 📊 Executive Summary
-* **Total Media Spend:** €142,500 across 120 airings
-* **Attributed Web Lift:** +14,820 incremental visits (8-minute response window)
-* **Campaign Average CPIV:** €9.62 per incremental visitor
-* **Collision Rate:** 84% isolated spots (101 spots), 16% overlapping spots (19 spots)
-
-#### 🏆 Station Performance Breakdown
-| Station | Spots | Total Spend | Total GRP | Incremental Lift | Avg. CPIV | Efficiency Rating |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **VOX** | 35 | €38,000 | 48.2 | +5,210 | **€7.29** | ⭐ Top Performer |
-| **Joyn** | 22 | €18,500 | 24.0 | +2,380 | **€7.77** | High Efficiency |
-| **ProSieben** | 38 | €52,000 | 66.5 | +4,890 | **€10.63** | Average |
-| **RTL** | 25 | €34,000 | 42.1 | +2,340 | **€14.53** | High Cost / Low Direct Response |
-
-#### 💡 Key Insights & Recommendations
-1. **VOX was your most efficient channel:** Delivering incremental visits at €7.29 CPIV (nearly 50% cheaper than RTL at €14.53).
-2. **Daypart Optimization:** Daytime airings (10:00–16:00) delivered lower volume but excellent CPIV (€6.40), while Prime-Time (20:00–22:00) generated the highest absolute spikes at higher cost (€12.80 CPIV).
-3. **Collision Warning:** 19 spots aired within 8 minutes of each other on competing stations. In open-core, these use proportional GRP weighting.
-
-*Note: This analysis measures immediate 8-minute web traffic response. Delayed word-of-mouth and retail sales require complementary MMM or clean-room analysis.*
+```python
+telemetry = sl.load_telemetry("ga4_export.csv", zero_fill_gaps=True)
 ```
+
+---
+
+## Output Fields
+
+| Field | Description |
+| :--- | :--- |
+| `spot_id`, `timestamp`, `channel`, `creative_id` | Spot identifiers |
+| `cost`, `grp`, `duration_sec` | Spot economics |
+| `baseline_volume` | Expected organic traffic (diurnal baseline × alpha) |
+| `observed_volume` | Actual observed traffic in the response window |
+| `incremental_lift` | Observed − calibrated baseline (signed unless `clip_negative`) |
+| `cpiv` | Cost per incremental visit (`cost / incremental_lift`) |
+| `conversion_rate` | Hourly CR weighted by sessions, ±1h neighborhood (when `apply_cr_model=True`) |
+| `key_event_response` | Estimated conversions: `incremental_lift × conversion_rate` |
+| `is_overlapping`, `collision_cluster_id` | Collision detection flags |
+| `attribution_method` | `single_spot_diurnal_exact`, `naive_proportional_fallback`, `insufficient_coverage`, or `insufficient_history` |
+
+---
+
+## Explaining Results to Stakeholders
+
+Structure client-facing output as:
+
+1. **Executive Summary** — total spend, attributed lift, campaign CPIV, spot count.
+2. **Station/Creative Efficiency** — table ranked by CPIV (lowest = best).
+3. **Collision Diagnostics** — % isolated vs. overlapping spots; note proportional splitting.
+4. **Conversion Bridge** — when `key_event_response` is present, report estimated conversions and the CR used.
+5. **Methodological Disclaimer** — immediate direct response ≠ total ROI. TV also drives delayed conversions, brand search, and retail halo requiring MMM or clean-room analysis.
+
+---
+
+## Pitfalls
+
+- **Timezone misalignment** is the #1 error source. Always confirm the source timezone of broadcast logs before loading. A 1–2 hour offset makes spots miss their own response windows.
+- **`ga4_conversions` missing** — if the telemetry only contains sessions and no conversions channel, `apply_conversion_model` silently skips (CR and `key_event_response` stay `None`). Don't report zero conversions; report "conversion bridge not available."
+- **`zero_fill_gaps` vs `allow_interpolation`** — zero-fill inserts `0.0` for missing minutes; interpolation linearly bridges small gaps (≤3 min). Use zero-fill for GA4 exports that omit zero-activity rows; use interpolation for transient API hiccups.
+- **Collision bias** — overlapping spots get `naive_proportional_fallback`, which over-credits high-GRP stations. Flag this in client reports; recommend SpotLift Pro for EM deconvolution.
+
+---
+
+## Verification
+
+After running attribution, verify:
+
+- [ ] Every spot in the airings log has a result row (count match).
+- [ ] `incremental_lift` is non-negative when `clip_negative=True`.
+- [ ] Isolated spots have `attribution_method="single_spot_diurnal_exact"`.
+- [ ] `conversion_rate` is populated when `ga4_conversions` was present in telemetry.
+- [ ] No timezone-naive timestamps in the output (`results["timestamp"].dt.tz` is not `None`).
