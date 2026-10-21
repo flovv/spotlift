@@ -17,14 +17,12 @@ SpotLift is a Python-native econometric engine engineered to measure the immedia
 SpotLift includes a realistic synthetic benchmark flight requiring **zero external credentials or API keys**. Install and run an inspectable diagnostic attribution pass in a single command:
 
 ```bash
-# Install directly from GitHub:
-pip install git+https://github.com/flovv/spotlift.git
+# Install from PyPI:
+pip install spotlift
 
 # Run instant diagnostic demo:
 spotlift demo
 ```
-
-*(PyPI publication pending: `pip install spotlift`)*
 
 ### Inspectable Terminal Output:
 ```text
