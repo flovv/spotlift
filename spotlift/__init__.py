@@ -39,12 +39,26 @@ from spotlift.core.conversion import (
     compute_hourly_conversion_rates,
     estimate_conversion_rate_for_spot,
 )
+from spotlift.core.linear_regression_baseline import (
+    LinearRegressionBaseline,
+    compute_linear_regression_baseline,
+)
 from spotlift.core.single_spot import analyze_spots_core
 from spotlift.io.fixtures import generate_dach_benchmark_dataset
 from spotlift.io.loaders import load_airings, load_telemetry
 from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_bigquery_sql
 from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
 from spotlift.pro.installer import install_pro
+
+# Pure-Python AMC ingestion — importable without the compiled spotlift_pro binary.
+try:
+    from spotlift.pro.amc_ingestion import (
+        AMCConfig,
+        AMCIngestionError,
+        run_amc_ingestion,
+    )
+except ImportError:  # pragma: no cover
+    pass
 
 __version__ = "0.2.0"
 
@@ -60,6 +74,7 @@ def analyze_spots(
     conversions_source: str = "ga4_conversions",
     cr_window_hours: int = 1,
     baseline_fn: BaselineFn | None = None,
+    collision_attribution: str = "weighted_share",
 ) -> pd.DataFrame:
     """Open-source core entry point.
 
@@ -106,6 +121,7 @@ def analyze_spots(
         conversions_source=conversions_source,
         cr_window_hours=cr_window_hours,
         baseline_fn=baseline_fn,
+        collision_attribution=collision_attribution,
     )
 
 
@@ -160,8 +176,11 @@ def analyze_omnichannel_pro(
 
 __all__ = [
     "HAS_PRO",
+    "AMCConfig",
+    "AMCIngestionError",
     "AiringLogSchema",
     "BaselineFn",
+    "LinearRegressionBaseline",
     "MissingTelemetryGapWarning",
     "ProFeatureNotInstalledError",
     "ProLicenseError",
@@ -176,6 +195,7 @@ __all__ = [
     "apply_conversion_model",
     "compute_diurnal_baseline",
     "compute_hourly_conversion_rates",
+    "compute_linear_regression_baseline",
     "estimate_conversion_rate_for_spot",
     "generate_amc_telemetry_sql",
     "generate_dach_benchmark_dataset",
@@ -184,5 +204,6 @@ __all__ = [
     "is_pro_available",
     "load_airings",
     "load_telemetry",
+    "run_amc_ingestion",
     "simple_mean_baseline",
 ]

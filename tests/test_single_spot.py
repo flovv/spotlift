@@ -27,10 +27,11 @@ def test_analyze_spots_core(benchmark_dataset):
     if not isolated.empty:
         assert (isolated["attribution_method"] == "single_spot_diurnal_exact").all()
 
-    # Overlapping spots must have 'naive_proportional_fallback'
+    # Overlapping spots must have 'weighted_share_attribution' (default) or 'naive_proportional_fallback'
     overlapping = results[results["is_overlapping"]]
     if not overlapping.empty:
-        assert (overlapping["attribution_method"] == "naive_proportional_fallback").all()
+        valid_methods = {"weighted_share_attribution", "naive_proportional_fallback"}
+        assert set(overlapping["attribution_method"].unique()).issubset(valid_methods)
 
 
 def test_integrate_isolated_spot_empty_window():

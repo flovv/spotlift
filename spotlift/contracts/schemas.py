@@ -19,6 +19,7 @@ ChannelSourceType = Literal[
 AttributionMethodType = Literal[
     "single_spot_diurnal_exact",
     "naive_proportional_fallback",
+    "weighted_share_attribution",
     "pro_em_shifted_gamma",
     "insufficient_coverage",
     "insufficient_history",

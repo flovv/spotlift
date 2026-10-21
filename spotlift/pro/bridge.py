@@ -15,6 +15,17 @@ except ImportError:
     spotlift_pro = None  # type: ignore
     HAS_PRO = False
 
+# Pure-Python AMC ingestion — importable without the compiled spotlift_pro binary.
+# Guarded so a failure here (e.g. missing httpx/pandas in a minimal env) never
+# blocks the rest of the Pro bridge from loading.
+try:
+    from spotlift.pro.amc_ingestion import AMCConfig, run_amc_ingestion
+    HAS_AMC = True
+except ImportError:
+    AMCConfig = None  # type: ignore
+    run_amc_ingestion = None  # type: ignore
+    HAS_AMC = False
+
 
 def is_pro_available() -> bool:
     """Returns True if the compiled spotlift_pro binary extension is installed."""

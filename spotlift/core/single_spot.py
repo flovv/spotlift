@@ -8,6 +8,8 @@ import pandas as pd
 from spotlift.core.baseline import BaselineFn, compute_diurnal_baseline
 from spotlift.core.conversion import apply_conversion_model
 from spotlift.core.overlap import detect_collision_clusters, print_diagnostic_banner
+from spotlift.core.vectorized import integrate_isolated_spots_batch
+from spotlift.core.weighted_share import integrate_weighted_share_cluster
 
 
 def integrate_isolated_spot(
@@ -287,6 +289,7 @@ def analyze_spots_core(
     conversions_source: str = "ga4_conversions",
     cr_window_hours: int = 1,
     baseline_fn: BaselineFn | None = None,
+    collision_attribution: str = "weighted_share",
 ) -> pd.DataFrame:
     """Core econometric engine: calculates trailing diurnal baselines and single-spot attribution.
 
@@ -298,6 +301,13 @@ def analyze_spots_core(
     Pass ``simple_mean_baseline`` for campaigns with <7 days of history or markets
     without a clean diurnal pattern. Custom callables must conform to the
     ``BaselineFn`` protocol (see ``spotlift.core.baseline``).
+
+    Args:
+        collision_attribution: Method for collision cluster attribution.
+            ``"weighted_share"`` (default) uses continuous-time weighted-share
+            attribution (``integrate_weighted_share_cluster``).
+            ``"naive_proportional"`` uses the original naive proportional
+            fallback (``integrate_proportional_fallback``).
     """
     if airings.empty:
         return pd.DataFrame()
@@ -329,32 +339,40 @@ def analyze_spots_core(
     )
 
     records = []
-    # Process isolated spots
+    # Process isolated spots (vectorized batch)
     isolated = clustered_airings[~clustered_airings["is_overlapping"]]
-    for _, spot in isolated.iterrows():
-        alpha = alphas.get(spot["timestamp"], 1.0)
-        rec = integrate_isolated_spot(
-            spot=spot,
+    if not isolated.empty:
+        records = integrate_isolated_spots_batch(
+            isolated_airings=isolated,
             telemetry_series=telemetry_series,
             raw_baseline_series=raw_baseline_series,
-            alpha=alpha,
+            alphas=alphas,
             window_minutes=window_minutes,
             clip_negative=clip_negative,
         )
-        records.append(rec)
 
     # Process collision clusters
     colliding = clustered_airings[clustered_airings["is_overlapping"]]
     if not colliding.empty:
         for _, cluster_group in colliding.groupby("collision_cluster_id"):
-            cluster_recs = integrate_proportional_fallback(
-                cluster_spots=cluster_group,
-                telemetry_series=telemetry_series,
-                raw_baseline_series=raw_baseline_series,
-                alphas=alphas,
-                window_minutes=window_minutes,
-                clip_negative=clip_negative,
-            )
+            if collision_attribution == "naive_proportional":
+                cluster_recs = integrate_proportional_fallback(
+                    cluster_spots=cluster_group,
+                    telemetry_series=telemetry_series,
+                    raw_baseline_series=raw_baseline_series,
+                    alphas=alphas,
+                    window_minutes=window_minutes,
+                    clip_negative=clip_negative,
+                )
+            else:  # "weighted_share" (default)
+                cluster_recs = integrate_weighted_share_cluster(
+                    cluster_spots=cluster_group,
+                    telemetry_series=telemetry_series,
+                    raw_baseline_series=raw_baseline_series,
+                    alphas=alphas,
+                    window_minutes=window_minutes,
+                    clip_negative=clip_negative,
+                )
             records.extend(cluster_recs)
 
     result_df = pd.DataFrame(records).sort_values("timestamp").reset_index(drop=True)
