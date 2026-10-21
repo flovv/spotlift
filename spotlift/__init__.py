@@ -33,12 +33,12 @@ from spotlift.contracts.schemas import (
     SpotAttributionRecord,
     TelemetryStreamSchema,
 )
-from spotlift.core.single_spot import analyze_spots_core
 from spotlift.core.conversion import (
     apply_conversion_model,
     compute_hourly_conversion_rates,
     estimate_conversion_rate_for_spot,
 )
+from spotlift.core.single_spot import analyze_spots_core
 from spotlift.io.fixtures import generate_dach_benchmark_dataset
 from spotlift.io.loaders import load_airings, load_telemetry
 from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_bigquery_sql
