@@ -45,7 +45,7 @@ from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_b
 from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
 from spotlift.pro.installer import install_pro
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def analyze_spots(

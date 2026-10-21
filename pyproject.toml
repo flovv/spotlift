@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spotlift"
-version = "0.1.0"
+version = "0.2.0"
 description = "Econometric High-Frequency Linear TV Attribution Engine across GA4 and Amazon AMC"
 readme = "README.md"
 license = { text = "MIT" }

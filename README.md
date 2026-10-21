@@ -35,7 +35,7 @@ spotlift demo
 
 Running Open-Core Diagnostic Attribution Pass:
 ====================================================================================
- SPOTLIFT OPEN-CORE v0.1.0 — CAMPAIGN DIAGNOSTIC SUMMARY
+ SPOTLIFT OPEN-CORE v0.2.0 — CAMPAIGN DIAGNOSTIC SUMMARY
 ====================================================================================
  Broadcast Schedule:        600 spots across 4 stations
  Isolated Single Spots:     502 spots (83.7%) ──► Exact Diurnal Integration
@@ -99,7 +99,7 @@ File format: `.csv` or `.parquet`.
 | :--- | :--- | :---: | :--- | :--- |
 | `timestamp` | Datetime | **Yes** | ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) | Continuous 1-minute bucket timestamps. |
 | `value` | Float / Int | **Yes** | Count (>= 0) | Direct & Organic sessions or visits in that minute. |
-| `channel_source` | String | Optional | Stream identifier | Source label (defaults to `ga4_sessions`). |
+| `channel_source` | String | Optional | Stream identifier | Source label (defaults to `ga4_direct_organic_sessions`; `ga4_sessions` is aliased). Include a `ga4_conversions` channel for the conversion-rate bridge. |
 
 ---
 
@@ -114,12 +114,36 @@ File format: `.csv` or `.parquet`.
 2. **Missing Minute Intervals (Zero-Traffic Gaps):**
    * *Problem:* GA4 reporting often omits minutes with zero traffic rather than recording `value = 0`.
    * *Fix:* SpotLift's `load_telemetry()` automatically aligns timestamps to a complete 1-minute grid and interpolates minor gaps ($\le 3$ min). If a gap $> 3$ min occurs during an active spot response window, SpotLift raises a `TelemetryGapError` to prevent biased integration.
+   * *Alternative:* For GA4 exports that systematically omit zero-activity minutes, use `zero_fill_gaps=True`:
+     ```python
+     ga4 = sl.load_telemetry("ga4_export.csv", zero_fill_gaps=True)
+     ```
+     This fills missing minutes with `0.0` instead of raising. Use `allow_interpolation=True` for transient API hiccups (linear bridge), `zero_fill_gaps=True` for structurally absent zero-rows.
 3. **Non-Standard Column Headers:**
    * *Problem:* Media agencies export logs with columns like `Sendetermin`, `Sender`, `Netto`, or `Sessions`.
    * *Fix:* Rename headers prior to loading:
      ```python
      df = df.rename(columns={"Sendetermin": "timestamp", "Sender": "channel", "Netto": "cost"})
      ```
+
+---
+
+## Output Fields
+
+`sl.analyze_spots()` returns a DataFrame with one row per spot:
+
+| Field | Description |
+| :--- | :--- |
+| `spot_id`, `timestamp`, `channel`, `creative_id` | Spot identifiers |
+| `cost`, `grp`, `duration_sec` | Spot economics |
+| `baseline_volume` | Expected organic traffic (diurnal baseline × alpha calibration) |
+| `observed_volume` | Actual observed traffic in the response window |
+| `incremental_lift` | Observed − calibrated baseline (signed unless `clip_negative=True`) |
+| `cpiv` | Cost per incremental visit (`cost / incremental_lift`) |
+| `conversion_rate` | Hourly conversion rate weighted by sessions, ±1h neighborhood (when `apply_cr_model=True` and conversions present) |
+| `key_event_response` | Estimated conversions: `incremental_lift × conversion_rate` |
+| `is_overlapping`, `collision_cluster_id` | Collision detection flags |
+| `attribution_method` | `single_spot_diurnal_exact`, `naive_proportional_fallback`, `insufficient_coverage`, or `insufficient_history` |
 
 ---
 
@@ -143,7 +167,8 @@ When two or more spots air within the 8-minute response window on different stat
 | **Exact Signed Single-Spot Lift Integration** | ✅ Included | ✅ Included |
 | **Prime-Time Collision Graph Detector** | ✅ Included | ✅ Included |
 | **Telemetry SQL Generators (GA4 & Amazon AMC)** | ✅ Included (`spotlift sql`) | ✅ Included |
-| **Agentic TV Attribution Skill (`SKILL.md`)** | ✅ Included | ✅ Included |
+| **Conversion-Rate Bridge (Session Lift → Key Events)** | ✅ Included | ✅ Included |
+| **Hourly Conversion-Rate Model (`apply_cr_model`)** | ✅ Included | ✅ Included |
 | **Multi-Spot Shifted-Gamma EM Deconvolution** | ❌ (Proportional Fallback) | ✅ Exact Identifiability |
 | **Dual-Stage TV-to-Amazon Distributed Lag (36h)** | ❌ Banner Alert | ✅ Non-Negative Regularized |
 | **Amazon Branded PPC Cannibalization Auditor** | ❌ | ✅ Wasted PPC Tax Calculator |
@@ -185,7 +210,16 @@ airings = sl.load_airings("tv_schaltplan.csv", tz="Europe/Berlin")
 ga4 = sl.load_telemetry("ga4_minute_sessions.parquet")
 
 # 2. Run open-source diurnal baseline & single-spot attribution
-results = sl.analyze_spots(airings, ga4, window_minutes=8, clip_negative=False)
+#    apply_cr_model=True bridges session lift → key_event_response
+#    when a ga4_conversions channel is present in the telemetry
+results = sl.analyze_spots(
+    airings,
+    ga4,
+    window_minutes=8,
+    clip_negative=False,
+    apply_cr_model=True,              # bridge session lift → estimated conversions
+    conversions_source="ga4_conversions",
+)
 
 # 3. Inspect top-performing stations
 station_summary = (
