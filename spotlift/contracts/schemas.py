@@ -90,6 +90,9 @@ class SpotAttributionRecord(BaseModel):
     is_overlapping: bool = False
     collision_cluster_id: int | None = None
     attribution_method: AttributionMethodType
+    # Session-to-conversion bridge: hourly CR weighted by session volume
+    conversion_rate: float | None = None
+    key_event_response: float | None = None
 
     # Populated only when spotlift_pro is active and Amazon telemetry is supplied
     amz_incremental_units: float | None = None

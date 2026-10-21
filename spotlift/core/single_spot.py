@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from spotlift.core.baseline import compute_diurnal_baseline
+from spotlift.core.conversion import apply_conversion_model
 from spotlift.core.overlap import detect_collision_clusters, print_diagnostic_banner
 
 
@@ -282,8 +283,16 @@ def analyze_spots_core(
     pre_window_minutes: int = 15,
     baseline_days: int = 21,
     clip_negative: bool = False,
+    apply_cr_model: bool = True,
+    conversions_source: str = "ga4_conversions",
+    cr_window_hours: int = 1,
 ) -> pd.DataFrame:
-    """Core econometric engine: calculates trailing diurnal baselines and single-spot attribution."""
+    """Core econometric engine: calculates trailing diurnal baselines and single-spot attribution.
+
+    When ``apply_cr_model`` is True (default) and a conversions channel is present
+    in ``web_telemetry``, annotates each attributed spot with ``conversion_rate``
+    and ``key_event_response`` (session lift × hourly CR).
+    """
     if airings.empty:
         return pd.DataFrame()
 
@@ -342,6 +351,20 @@ def analyze_spots_core(
             records.extend(cluster_recs)
 
     result_df = pd.DataFrame(records).sort_values("timestamp").reset_index(drop=True)
+
+    # Apply conversion-rate bridge: session lift → key_event_response
+    if apply_cr_model:
+        has_conversions = (
+            "channel_source" in web_telemetry.columns
+            and (web_telemetry["channel_source"] == conversions_source).any()
+        )
+        if has_conversions:
+            result_df = apply_conversion_model(
+                result_df,
+                web_telemetry,
+                conversions_source=conversions_source,
+                window_hours=cr_window_hours,
+            )
 
     has_amazon = False
     if "channel_source" in web_telemetry.columns:

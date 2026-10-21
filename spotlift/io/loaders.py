@@ -82,6 +82,7 @@ def load_telemetry(
     tz: str = "UTC",
     allow_interpolation: bool = False,
     active_spot_windows: list[tuple[datetime, datetime]] | None = None,
+    zero_fill_gaps: bool = False,
 ) -> pd.DataFrame:
     """Loads, validates, and defensively aligns GA4 or Amazon telemetry against TelemetryStreamSchema.
 
@@ -93,6 +94,9 @@ def load_telemetry(
         tz: Default timezone assumed if input timestamps are timezone-naive.
         allow_interpolation: If False (default), rejects missing telemetry gaps > 3 min.
         active_spot_windows: Optional list of (t_start, t_end) active treatment windows to enforce gap rules.
+        zero_fill_gaps: If True, fill missing minute rows with zero instead of raising
+            TelemetryGapError. Useful when the telemetry source omits zero-activity
+            minutes (common in GA4 API exports). Default False.
 
     Returns:
         Cleaned, contiguous pd.DataFrame indexed/sorted by timestamp.
@@ -182,38 +186,43 @@ def load_telemetry(
                 gap_lengths = gap_blocks.value_counts()
                 max_gap = gap_lengths.max() if len(gap_lengths) > 0 else 0
 
-                # Check active spot window collision with gaps
-                if active_spot_windows:
-                    na_timestamps = reindexed.index[is_na]
-                    for na_t in na_timestamps:
-                        for w_start, w_end in active_spot_windows:
-                            if w_start <= na_t < w_end and max_gap > 3:
-                                raise TelemetryGapError(
-                                    f"Contiguous gap of {max_gap} min > 3 min detected during active spot window "
-                                    f"[{w_start}, {w_end}]."
-                                )
+                if zero_fill_gaps:
+                    # Fill all missing minute rows with zero
+                    reindexed["value"] = reindexed["value"].fillna(0.0)
+                else:
+                    # Check active spot window collision with gaps
+                    if active_spot_windows:
+                        na_timestamps = reindexed.index[is_na]
+                        for na_t in na_timestamps:
+                            for w_start, w_end in active_spot_windows:
+                                if w_start <= na_t < w_end and max_gap > 3:
+                                    raise TelemetryGapError(
+                                        f"Contiguous gap of {max_gap} min > 3 min detected during active spot window "
+                                        f"[{w_start}, {w_end}]."
+                                    )
 
-                # If gap exceeds 3 minutes, reject by default
-                if max_gap > 3:
-                    raise TelemetryGapError(
-                        f"Detected missing telemetry gap of {max_gap} minutes (> 3 min threshold). "
-                        "Long telemetry gaps cannot be interpolated into synthetic traffic."
-                    )
-
-                if 0 < max_gap <= 3:
-                    if allow_interpolation:
-                        warnings.warn(
-                            f"Detected minor telemetry gap(s) up to {max_gap} minutes. "
-                            "Applying linear interpolation.",
-                            category=MissingTelemetryGapWarning,
-                            stacklevel=2,
-                        )
-                        reindexed["value"] = reindexed["value"].interpolate(method="linear").bfill().ffill()
-                    else:
+                    # If gap exceeds 3 minutes, reject by default
+                    if max_gap > 3:
                         raise TelemetryGapError(
-                            f"Detected missing telemetry gap of {max_gap} minutes. "
-                            "Set allow_interpolation=True to interpolate minor gaps (<= 3 min)."
+                            f"Detected missing telemetry gap of {max_gap} minutes (> 3 min threshold). "
+                            "Long telemetry gaps cannot be interpolated into synthetic traffic. "
+                            "Set zero_fill_gaps=True to fill missing minutes with zero."
                         )
+
+                    if 0 < max_gap <= 3:
+                        if allow_interpolation:
+                            warnings.warn(
+                                f"Detected minor telemetry gap(s) up to {max_gap} minutes. "
+                                "Applying linear interpolation.",
+                                category=MissingTelemetryGapWarning,
+                                stacklevel=2,
+                            )
+                            reindexed["value"] = reindexed["value"].interpolate(method="linear").bfill().ffill()
+                        else:
+                            raise TelemetryGapError(
+                                f"Detected missing telemetry gap of {max_gap} minutes. "
+                                "Set allow_interpolation=True to interpolate minor gaps (<= 3 min)."
+                            )
 
             reindexed = reindexed.reset_index().rename(columns={"index": "timestamp"})
             processed_dfs.append(reindexed)
