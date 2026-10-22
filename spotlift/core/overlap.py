@@ -92,7 +92,7 @@ def print_diagnostic_banner(
 
     console = Console()
     console.print("=" * 84, style="bold blue")
-    console.print(" SPOTLIFT OPEN-CORE v0.2.0 — CAMPAIGN DIAGNOSTIC SUMMARY", style="bold white on blue")
+    console.print(" SPOTLIFT OPEN-CORE v0.2.1 — CAMPAIGN DIAGNOSTIC SUMMARY", style="bold white on blue")
     console.print("=" * 84, style="bold blue")
     console.print(f" Broadcast Schedule:        {total_spots} spots across {n_channels} stations")
     if n_insufficient > 0:
