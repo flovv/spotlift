@@ -4,7 +4,8 @@
 [![Python versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://github.com/flovv/spotlift)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://flovv.github.io/spotlift/)
-[![Agent Skill](https://img.shields.io/badge/Agent%20Skill-tv--to--web--measurement-purple)](skills/tv-to-web-measurement/SKILL.md)
+[![Agent Skill](https://img.shields.io/badge/Agent%20Skill-tv--to--web--measurement-purple)](https://skills.sh/flovv/spotlift/tv-to-web-measurement)
+[![skills.sh](https://img.shields.io/badge/skills.sh-tv--to--web--measurement-black)](https://skills.sh/flovv/spotlift/tv-to-web-measurement)
 
 **Turn TV airing logs and web traffic into a reproducible campaign response analysis.**
 
@@ -242,7 +243,12 @@ Equipped with this skill, AI coding assistants (Antigravity, Cursor, Claude Code
 4. Call SpotLift to calculate diurnal baselines and spot lifts.
 5. Synthesize plain-language post-buy executive summaries for marketing stakeholders.
 
-Install into your local agent environment:
+Install directly via [skills.sh](https://skills.sh/flovv/spotlift/tv-to-web-measurement) into Cursor, Claude Code, Antigravity, Copilot, and other agent environments:
+```bash
+npx skills add flovv/spotlift
+```
+
+Or install manually into your local project:
 ```bash
 mkdir -p .agent/skills/tv-to-web-measurement
 cp skills/tv-to-web-measurement/SKILL.md .agent/skills/tv-to-web-measurement/
