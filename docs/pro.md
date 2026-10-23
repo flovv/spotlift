@@ -41,7 +41,29 @@ SpotLift Pro solves for the latent amplitudes $A_i$ using an **Expectation-Maxim
 
 ---
 
-## 2. Automated Executive Deliverables
+## 2. Amazon AMC Halo & PPC Cannibalization
+
+SpotLift Pro includes turnkey support for omnichannel broadcast measurement across Amazon:
+
+* **Curated AMC Clean Room SQL Suite:** Pre-built, tested extraction queries for Amazon Marketing Cloud (AMC) extracting hourly ordered units, sales, and detail page views.
+* **36-Hour Distributed Lag Convolution:** Captures the multi-day delayed purchase peak, attributing incremental retail lift to specific broadcast spots.
+* **PPC Cannibalization Guard:** Automatically isolates organic TV-driven sales from wasted Sponsored Brands ad spend on internal brand keywords.
+
+```python
+import spotlift
+
+results = spotlift.analyze_omnichannel_pro(
+    airings=airings,
+    web_telemetry=web_telemetry,
+    amazon_telemetry=amazon_telemetry,
+    window_minutes=6,
+    export_excel="omnichannel_audit.xlsx"
+)
+```
+
+---
+
+## 3. Automated Executive Deliverables
 
 SpotLift Pro eliminates manual spreadsheet manipulation by automatically generating publication-ready audit deliverables:
 
@@ -75,7 +97,7 @@ Export an interactive, responsive HTML report containing dynamic charts, lift cu
 
 ---
 
-## 3. White-Label Configuration
+## 4. White-Label Configuration
 
 Performance agencies can fully white-label all generated outputs:
 
@@ -91,7 +113,7 @@ white_label_config = {
 
 ---
 
-## 4. Licensing & Installation via Polar.sh
+## 5. Licensing & Installation via Polar.sh
 
 SpotLift Pro is distributed as a commercial binary wheel managed via [Polar.sh](https://polar.sh):
 

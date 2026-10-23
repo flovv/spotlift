@@ -4,6 +4,9 @@ export default defineConfig({
   base: '/spotlift/',
   title: "SpotLift",
   description: "Python-Native Econometric Linear TV Attribution Engine across GA4 and Amazon AMC",
+  markdown: {
+    math: true
+  },
   head: [
     ['link', { rel: 'icon', href: '/spotlift/favicon.ico' }],
     ['meta', { name: 'theme-color', content: '#2563eb' }],
@@ -32,8 +35,8 @@ export default defineConfig({
       { text: 'Methodology', link: '/methodology' },
       { text: 'Integrations', items: [
         { text: 'GA4 & BigQuery SQL', link: '/ga4-bigquery' },
-        { text: 'Amazon AMC & Retail Halo', link: '/amazon-amc' },
         { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
+        { text: 'Amazon AMC (Pro)', link: '/amazon-amc' },
       ]},
       { text: 'SpotLift Pro', link: '/pro' },
       { text: 'CLI', link: '/cli' },
@@ -62,7 +65,7 @@ export default defineConfig({
         text: 'Telemetry Integrations',
         items: [
           { text: 'Google Analytics 4 & BigQuery', link: '/ga4-bigquery' },
-          { text: 'Amazon AMC & PPC Cannibalization', link: '/amazon-amc' },
+          { text: 'Amazon AMC & Retail Halo (Pro)', link: '/amazon-amc' },
         ]
       },
       {

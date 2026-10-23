@@ -65,3 +65,8 @@ node_modules/
 
 
 uv.lock
+
+.vitepress/cache/
+
+**/.vitepress/cache/
+**/.vitepress/dist/

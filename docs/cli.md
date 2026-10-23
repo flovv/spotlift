@@ -16,9 +16,6 @@ spotlift run --airings airings.csv --telemetry ga4.csv --output results.csv
 # Generate BigQuery GA4 extraction SQL
 spotlift generate-sql --dialect bigquery-ga4
 
-# Generate Amazon Marketing Cloud extraction SQL
-spotlift generate-sql --dialect amc-hourly-units
-
 # Check environment, Python version, and Pro license status
 spotlift diagnose
 ```
@@ -71,15 +68,16 @@ spotlift run \
 
 ### `spotlift generate-sql`
 
-Outputs production-tested SQL templates for BigQuery GA4 or Amazon Marketing Cloud.
+Outputs production-tested SQL templates for extracting digital telemetry.
 
 ```bash
 # Export GA4 BigQuery SQL to file
 spotlift generate-sql --dialect bigquery-ga4 > extract_ga4.sql
-
-# Export AMC clean room SQL to file
-spotlift generate-sql --dialect amc-hourly-units > extract_amc.sql
 ```
+
+::: tip Amazon Marketing Cloud (AMC) Ingestion
+Turnkey AMC extraction queries, 36-hour distributed lag retail halo modeling, and PPC cannibalization audits are enabled via [SpotLift Pro](/pro).
+:::
 
 ---
 
