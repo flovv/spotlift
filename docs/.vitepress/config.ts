@@ -58,7 +58,7 @@ export default defineConfig({
         items: [
           { text: 'Core Econometrics & Baseline', link: '/methodology' },
           { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
-          { text: 'vs. Legacy SaaS (TVSquared)', link: '/vs-tvsquared' },
+          { text: 'vs. Legacy Providers & SaaS', link: '/vs-tvsquared' },
         ]
       },
       {
