@@ -3,8 +3,10 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   base: '/spotlift/',
   title: "SpotLift",
-  description: "Python-native Econometric Linear TV Attribution Engine across GA4 and Amazon AMC",
+  description: "Python-Native Econometric Linear TV Attribution Engine across GA4 and Amazon AMC",
   head: [
+    ['link', { rel: 'icon', href: '/spotlift/favicon.ico' }],
+    ['meta', { name: 'theme-color', content: '#2563eb' }],
     ['script', { type: 'application/ld+json' }, JSON.stringify({
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
@@ -21,26 +23,62 @@ export default defineConfig({
     })]
   ],
   themeConfig: {
+    siteTitle: 'SpotLift',
+    search: {
+      provider: 'local'
+    },
     nav: [
-      { text: 'Guide', link: '/index' },
+      { text: 'Quickstart', link: '/quickstart' },
+      { text: 'Methodology', link: '/methodology' },
+      { text: 'Integrations', items: [
+        { text: 'GA4 & BigQuery SQL', link: '/ga4-bigquery' },
+        { text: 'Amazon AMC & Retail Halo', link: '/amazon-amc' },
+        { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
+      ]},
+      { text: 'SpotLift Pro', link: '/pro' },
+      { text: 'CLI', link: '/cli' },
+      { text: 'API Reference', link: '/api-reference' },
       { text: 'vs. Legacy SaaS', link: '/vs-tvsquared' },
-      { text: 'LLMs Index', link: '/llms.txt' },
       { text: 'GitHub', link: 'https://github.com/flovv/spotlift' }
     ],
     sidebar: [
       {
-        text: 'Overview',
+        text: 'Getting Started',
         items: [
-          { text: 'Introduction', link: '/index' },
-          { text: 'vs. Legacy Attribution SaaS', link: '/vs-tvsquared' },
+          { text: 'Overview & Philosophy', link: '/index' },
+          { text: '5-Minute Quickstart', link: '/quickstart' },
+          { text: 'CLI Commands & Demo', link: '/cli' },
         ]
       },
       {
-        text: 'Methodology',
+        text: 'Econometric Methodology',
         items: [
+          { text: 'Core Econometrics & Baseline', link: '/methodology' },
           { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
+          { text: 'vs. Legacy SaaS (TVSquared)', link: '/vs-tvsquared' },
+        ]
+      },
+      {
+        text: 'Telemetry Integrations',
+        items: [
+          { text: 'Google Analytics 4 & BigQuery', link: '/ga4-bigquery' },
+          { text: 'Amazon AMC & PPC Cannibalization', link: '/amazon-amc' },
+        ]
+      },
+      {
+        text: 'Enterprise & Pro',
+        items: [
+          { text: 'SpotLift Pro Engine', link: '/pro' },
+          { text: 'Python API Reference', link: '/api-reference' },
         ]
       }
-    ]
+    ],
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/flovv/spotlift' }
+    ],
+    footer: {
+      message: 'Released under the MIT License.',
+      copyright: 'Copyright © 2026 SpotLift Contributors'
+    }
   }
 })

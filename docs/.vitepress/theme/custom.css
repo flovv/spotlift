@@ -1,0 +1,51 @@
+:root {
+  --vp-c-brand-1: #2563eb;
+  --vp-c-brand-2: #3b82f6;
+  --vp-c-brand-3: #60a5fa;
+  --vp-c-brand-soft: rgba(37, 99, 235, 0.14);
+}
+
+.dark {
+  --vp-c-brand-1: #3b82f6;
+  --vp-c-brand-2: #60a5fa;
+  --vp-c-brand-3: #93c5fd;
+  --vp-c-brand-soft: rgba(59, 130, 246, 0.18);
+}
+
+/* Feature cards polish */
+.VPFeature {
+  border: 1px solid var(--vp-c-bg-soft) !important;
+  background-color: var(--vp-c-bg-soft) !important;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.VPFeature:hover {
+  transform: translateY(-2px);
+  border-color: var(--vp-c-brand-1) !important;
+  box-shadow: 0 12px 24px -10px rgba(37, 99, 235, 0.15);
+}
+
+/* Table readability */
+table {
+  width: 100%;
+  display: table;
+  margin: 1.5rem 0;
+  border-collapse: collapse;
+}
+
+th {
+  background-color: var(--vp-c-bg-soft);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+}
+
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+/* Code block tweaks */
+div[class*='language-'] {
+  border-radius: 8px;
+}
