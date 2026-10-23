@@ -9,7 +9,7 @@
 
 **Turn TV airing logs and web traffic into a reproducible campaign response analysis.**
 
-SpotLift is a Python-native econometric engine engineered to measure the immediate visitor response of **Linear TV** broadcast airings against minute-level **Google Analytics 4 (GA4)** web traffic and **Amazon Marketing Cloud (AMC)** telemetry.
+SpotLift is a agent-ready econometric engine engineered to measure the immediate visitor response of **Linear TV** broadcast airings against minute-level **Google Analytics 4 (GA4)** web traffic and **Amazon Marketing Cloud (AMC)** sales metrics.
 
 ---
 
@@ -52,8 +52,8 @@ Running Open-Core Diagnostic Attribution Pass:
 | `SPT_1002` | 2026-03-01 17:37 | VOX | €866 | 1.1 | 2,434 | 2,508 | **+73.8** | €11.73 | Isolated | `single_spot_diurnal_exact` |
 | `SPT_1003` | 2026-03-01 17:53 | RTL | €2,820 | 1.9 | 2,370 | 2,637 | **+267.4** | €10.55 | Isolated | `single_spot_diurnal_exact` |
 | `SPT_1004` | 2026-03-01 21:16 | VOX | €4,350 | 4.8 | 2,151 | 2,549 | **+398.1** | €10.93 | Isolated | `single_spot_diurnal_exact` |
-| `SPT_1005` | 2026-03-01 22:51 | Joyn | €2,730 | 4.6 | 1,714 | 1,988 | **+274.0** | €9.96 | Isolated | `single_spot_diurnal_exact` |
-| `SPT_1006` | 2026-03-01 23:27 | Joyn | €349 | 0.7 | 1,473 | 1,546 | **+73.0** | €4.79 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1005` | 2026-03-01 22:51 | SAT1 | €2,730 | 4.6 | 1,714 | 1,988 | **+274.0** | €9.96 | Isolated | `single_spot_diurnal_exact` |
+| `SPT_1006` | 2026-03-01 23:27 | SAT1 | €349 | 0.7 | 1,473 | 1,546 | **+73.0** | €4.79 | Isolated | `single_spot_diurnal_exact` |
 | `SPT_1007` | 2026-03-02 16:03 | ProSieben | €1,080 | 0.8 | 2,199 | 2,294 | **+94.5** | €11.43 | Isolated | `single_spot_diurnal_exact` |
 | `SPT_1008` | 2026-03-02 19:49 | ProSieben | €3,750 | 2.9 | 2,028 | 2,314 | **+285.6** | €13.13 | Isolated | `single_spot_diurnal_exact` |
 
@@ -61,12 +61,12 @@ Running Open-Core Diagnostic Attribution Pass:
 
 ## Methodological Foundation & Econometric Transparency
 
-### 1. Short-Term Direct Response vs. Total Causal TV ROI
+### 1. Short-Term Direct Response vs. Total TV ROI
 > [!IMPORTANT]
 > **Short-Term Response is Tactical, Not Total Campaign ROI:**
 > SpotLift measures the **immediate visitor lift** arriving on your site within 5–15 minutes of a spot airing. This direct-response metric is essential for tactical post-buy decisions (optimizing station mix, daypart efficiency, and creative rotation).
 > 
-> However, **immediate web lift is NOT total causal TV ROI**. Television generates substantial delayed word-of-mouth, brand equity, retail sales (physical retail and Amazon), and durable baseline traffic over weeks and months. Full causal campaign ROI should be evaluated using aggregate econometric methods such as Marketing Mix Modeling (MMM) or randomized geo-holdout experiments.
+> However, **immediate web lift is NOT total TV ROI**. Television generates substantial delayed word-of-mouth, brand equity, retail sales (physical retail and Amazon), and durable baseline traffic over weeks and months. Full causal campaign ROI should be evaluated using aggregate econometric methods such as Marketing Mix Modeling (MMM) or randomized geo-holdout experiments.
 
 ### 2. Unbiased Signed Lift Accounting
 Standard commercial attribution tools commonly clip negative minute differences to zero: $\max(0, Y_t - \hat{Y}_t)$. By Jensen's inequality, non-linear rectification turns zero-mean background traffic noise into strictly positive phantom lift ($\mathbb{E}[\max(0, \epsilon)] \approx 0.4\sigma$). 

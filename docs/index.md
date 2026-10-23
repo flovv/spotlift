@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: "SpotLift"
-  text: "Linear TV Attribution Engine"
+  text: "Agentic TV Attribution Engine"
   tagline: "Python-native econometric attribution for minute-by-minute GA4 web spikes and delayed Amazon AMC retail conversion halo."
   actions:
     - theme: brand

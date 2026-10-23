@@ -1,186 +1,199 @@
 ---
 name: tv-to-web-measurement
-description: Measure Linear TV lift from airings and GA4 telemetry.
-version: 0.2.2
+description: Measure Linear TV lift from airings and GA4 telemetry using SpotLift (Open-Core) and SpotLift Pro.
+version: 0.3.0
 author: flovv (flovv), Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [tv-attribution, ga4, linear-tv, broadcast, cpiV, conversion-rate]
+    tags: [tv-attribution, ga4, linear-tv, broadcast, cpiV, conversion-rate, spotlift-pro, deconvolution, wearout]
     related_skills: []
 ---
 
 # TV-to-Web Measurement Skill (`tv-to-web-measurement`)
 
-Measures high-frequency Linear TV incremental response on web traffic (GA4):
-diurnal baselines, single-spot lift, collision detection, CPIV, and
-session-to-conversion bridging via hourly conversion rates.
+Measures high-frequency Linear TV incremental response on web traffic (GA4) and marketplace conversions (Amazon AMC):
+- **SpotLift Open-Core:** Diurnal baseline estimation, exact single-spot integration, continuous weighted-share collision attribution, CPIV, and conversion-rate bridging.
+- **SpotLift Pro:** Shifted-Gamma EM multi-spot deconvolution for overlapping collisions, creative wear-out ($N_{50}$ fatigue half-life), daypart/station efficiency matrices, Amazon distributed lag halo, and standalone HTML/Excel executive reporting.
 
 > [!IMPORTANT]
 > **Division of Responsibilities:**
-> * **The Engine (`spotlift`) calculates results:** Never write custom integration loops, ad-hoc regressions, or heuristic baseline algorithms. Always call `spotlift.analyze_spots()` or `spotlift run`.
-> * **The Agent validates and explains results:** Your role is to inspect inputs, normalize timezones, map schema columns, invoke SpotLift, and provide plain-language business explanations.
+> * **The Engine (`spotlift` / `spotlift_pro`) calculates results:** Never write custom integration loops, ad-hoc regressions, or heuristic baseline algorithms. Always call `sl.analyze_spots()` or `sl.analyze_omnichannel_pro()`.
+> * **The Agent validates and explains results:** Inspect input data, map schema columns, reshape wide GA4 telemetry, invoke SpotLift, and provide clear strategic business explanations.
+> * **Workspace hygiene:** Never run unconstrained recursive directory scans (`Get-ChildItem -Recurse` or `find .`) that traverse `.venv` or `node_modules`.
 
 ---
 
-## When to Use
+## Pro Licensing & Availability
 
-Activate whenever a user provides TV/broadcast airing logs and web telemetry for attribution:
+Check whether SpotLift Pro is installed:
+```python
+import spotlift as sl
+print(sl.is_pro_available())  # True if spotlift_pro is installed
+```
 
-- *"Calculate the lift and CPIV for each spot from our TV schedule and GA4 sessions."*
-- *"Which channels and creatives drove the highest web traffic spikes?"*
-- *"Check our broadcast log for overlapping prime-time spots and run attribution."*
-- *"Write the SQL to extract minute-level direct/organic traffic from BigQuery GA4."*
-- *"Bridge our session lift to estimated purchases using GA4 conversion events."*
-
-**Don't use for:**
-- Total campaign ROI or media mix modeling (use MMM or geo-holdout tests).
-- Delayed Amazon/retail halo attribution (requires SpotLift Pro).
-- TV schedule reconciliation or DAP/Wizzad matching (domain-specific, not supported).
+SpotLift Pro requires a license key:
+- **Environment Variable:** `os.environ["SPOTLIFT_API_KEY"] = "SL_..."`
+- **Parameter:** Pass `api_key="SL_..."` directly into `analyze_omnichannel_pro()`.
+- **Local Dev / Evaluation Key:** If testing locally without production Polar credentials, the workspace machine cache accepts `SL_TEST_PRO_COMMERCIAL_VALID_KEY_12345`.
 
 ---
 
-## Input Data Contracts
+## Input Data Contracts & Column Mapping
 
 ### A. Broadcast Airings Log (Schaltplan)
+Expected columns for `sl.load_airings()`:
 
-| Required Field | Type | Description |
-| :--- | :--- | :--- |
-| `spot_id` | String/Int | Unique airing identifier |
-| `timestamp` | ISO 8601 Datetime | Broadcast start time with explicit timezone |
-| `channel` | String | Station or network name |
-| `creative_id` | String | Ad creative/motif identifier |
-| `cost` | Float (>0) | Net media spend in currency units |
-| `grp` | Float (>=0) | Gross Rating Points (optional, defaults to 0.0) |
+| Required Field | Type | Description | Common Agency Aliases |
+| :--- | :--- | :--- | :--- |
+| `spot_id` | String/Int | Unique airing identifier | `id`, `spot_nr` |
+| `timestamp` | ISO Datetime | Broadcast start time with explicit timezone | `airing_time`, `air_timestamp`, `sendetermin`, `datum_uhrzeit` |
+| `channel` | String | Station or network name | `station`, `network`, `sender`, `tv_station` |
+| `creative_id` | String | Ad creative variant or program motif | `creative`, `program`, `motif`, `sujet`, `ad_id` |
+| `cost` | Float (>=0) | Net media spend in currency units | `spend`, `net_cost`, `netto_kosten`, `media_spend` |
+| `grp` | Float (>=0) | Gross Rating Points (default: `0.0` or `1.0`) | `ratings`, `trps`, `reach` |
+| `duration_sec` | Int | Spot length in seconds (default: 30) | `duration`, `laenge` |
+| `program_genre`| String | Optional genre / environment | `genre`, `program`, `umfeld` |
 
 ### B. Web Telemetry (GA4)
+Expected columns for `sl.load_telemetry()`:
 
 | Required Field | Type | Description |
 | :--- | :--- | :--- |
-| `timestamp` | ISO 8601 Datetime | Minute bucket timestamp |
-| `value` | Float/Int (>=0) | Session or conversion count in that minute |
-| `channel_source` | String | Stream identifier (e.g. `ga4_direct_organic_sessions`, `ga4_conversions`) |
+| `timestamp` | ISO Datetime | 1-minute bucket timestamp (UTC) |
+| `value` | Float/Int (>=0) | Metric count (sessions or conversions) |
+| `channel_source` | String | `"ga4_direct_organic_sessions"` or `"ga4_conversions"` |
 
 > [!NOTE]
-> Session telemetry must be filtered for **Direct & Organic** traffic only. Exclude paid search/social so concurrent digital campaigns don't distort broadcast response. The conversion-rate bridge requires a `ga4_conversions` channel source in the same telemetry.
+> Session telemetry must represent **Direct & Organic** traffic only (excluding paid digital campaigns).
 
 ---
 
-## Stop Conditions
+## Data Ingestion Recipes
 
-Before running attribution, inspect the input data. **STOP and ask the user** if:
+### 1. Standard Airings Ingestion
+```python
+import spotlift as sl
+import pandas as pd
 
-1. **Ambiguous timezone:** Timestamps have no offset. Broadcast logs are usually local time (e.g. `Europe/Berlin`); GA4 exports may be UTC. Confirm before proceeding.
-2. **Missing essential columns:** Airings lacks `cost` or `channel`; telemetry lacks `value`. Ask for column mapping.
-3. **No date overlap:** TV flight and telemetry ranges don't intersect.
-4. **Coarse telemetry grain:** Web traffic is hourly or daily, not minute-level. Offer `spotlift sql --source ga4` to generate the BigQuery extraction query.
+tv_raw = pd.read_csv("schaltplan.csv")
+airings = tv_raw.rename(columns={
+    "air_timestamp": "timestamp",
+    "network": "channel",
+    "program": "creative_id",
+    "spend": "cost",
+})
+airings_df = sl.load_airings(airings, tz="UTC")
+```
 
----
+### 2. Reshaping Wide GA4 Telemetry (Sessions + Conversions)
+Agency exports frequently provide `timestamp`, `sessions`, and `conversions` as separate columns. Melt or concatenate them into SpotLift's long telemetry schema:
 
-## Column Mapping
+```python
+web_raw = pd.read_csv("web_tracking_minute_data.csv")
 
-Users often provide agency-specific headers. Map them to SpotLift's schema:
+sessions_df = pd.DataFrame({
+    "timestamp": web_raw["timestamp"],
+    "value": web_raw["sessions"].astype(float),
+    "channel_source": "ga4_direct_organic_sessions",
+    "promo_active": False,
+})
 
-| Target | Common Aliases |
-| :--- | :--- |
-| `timestamp` | `airing_time`, `datetime`, `sendetermin`, `datum_uhrzeit` |
-| `channel` | `station`, `sender`, `network`, `tv_station` |
-| `creative_id` | `creative`, `motif`, `sujet`, `ad_id` |
-| `cost` | `spend`, `net_cost`, `netto_kosten`, `media_spend` |
-| `grp` | `ratings`, `trps`, `audience_share` |
-| `value` | `sessions`, `visits`, `traffic`, `users`, `pageviews` |
+conversions_df = pd.DataFrame({
+    "timestamp": web_raw["timestamp"],
+    "value": web_raw["conversions"].astype(float),
+    "channel_source": "ga4_conversions",
+    "promo_active": False,
+})
+
+telemetry_df = sl.load_telemetry(
+    pd.concat([sessions_df, conversions_df], ignore_index=True),
+    tz="UTC",
+    zero_fill_gaps=True,
+)
+```
 
 ---
 
 ## Execution
 
-### Python SDK
+### Recipe A: SpotLift Open-Core (`sl.analyze_spots`)
+Use for standard diurnal attribution, collision detection, and weighted-share attribution:
 
 ```python
 import spotlift as sl
 
-# 1. Load data with timezone normalization
-airings = sl.load_airings("schaltplan.csv", tz="Europe/Berlin")
-telemetry = sl.load_telemetry("ga4_minutes.parquet")
-
-# 2. Run attribution with conversion-rate bridge
-results = sl.analyze_spots(
-    airings=airings,
-    web_telemetry=telemetry,
-    window_minutes=8,          # post-spot treatment window
-    pre_window_minutes=15,     # pre-spot anchor window
-    baseline_days=21,          # trailing diurnal baseline
-    clip_negative=False,       # preserve signed lift
-    apply_cr_model=True,       # bridge session lift → key_event_response
+core_results = sl.analyze_spots(
+    airings=airings_df,
+    web_telemetry=telemetry_df,
+    window_minutes=8,          # post-spot response window (min)
+    pre_window_minutes=15,     # baseline anchor window
+    baseline_days=21,          # trailing diurnal baseline days
+    clip_negative=False,       # preserve signed lift (prevents rectification bias)
+    apply_cr_model=True,       # session lift × hourly CR → key_event_response
     conversions_source="ga4_conversions",
 )
-
-# 3. Export
-results.to_csv("spot_attribution_results.csv", index=False)
+core_results.to_csv("spotlift_core_results.csv", index=False)
 ```
 
-### CLI
-
-```bash
-spotlift demo --out-dir ./demo_data        # synthetic DACH dataset
-spotlift run --spots schaltplan.csv --web ga4_minutes.parquet --out results.csv
-```
-
-### Zero-Fill Missing Minutes
-
-GA4 API exports often omit zero-activity minutes. Use `zero_fill_gaps=True` to fill them instead of raising `TelemetryGapError`:
+### Recipe B: SpotLift Pro (`sl.analyze_omnichannel_pro`)
+Use when overlapping collisions are present, or when client decks (HTML/Excel) and creative fatigue optimization are required:
 
 ```python
-telemetry = sl.load_telemetry("ga4_export.csv", zero_fill_gaps=True)
+import os
+import spotlift as sl
+
+os.environ["SPOTLIFT_API_KEY"] = "SL_TEST_PRO_COMMERCIAL_VALID_KEY_12345"
+
+pro_results = sl.analyze_omnichannel_pro(
+    airings=airings_df,
+    web_telemetry=telemetry_df,
+    amazon_telemetry=None,     # optional Amazon AMC hourly telemetry
+    window_minutes=8,
+    clip_negative=False,
+    apply_cr_model=True,
+    export_html="spotlift_pro_report.html",
+    export_excel="spotlift_pro_report.xlsx",
+)
+
+# Pro Output Structure:
+spots_df = pro_results["spots_df"]                     # spot-level attribution with EM deconvolution
+wearout = pro_results["creative_wearout"]              # creative fatigue half-life (N_50)
+eff_matrices = pro_results["efficiency_matrices"]      # daypart, channel, duration, program matrices
+html_path = pro_results["html_report_path"]            # standalone interactive client dashboard
+excel_path = pro_results["excel_report_path"]          # multi-tab audit workbook
 ```
 
 ---
 
-## Output Fields
+## Output Fields & Structure
 
-| Field | Description |
-| :--- | :--- |
-| `spot_id`, `timestamp`, `channel`, `creative_id` | Spot identifiers |
-| `cost`, `grp`, `duration_sec` | Spot economics |
-| `baseline_volume` | Expected organic traffic (diurnal baseline × alpha) |
-| `observed_volume` | Actual observed traffic in the response window |
-| `incremental_lift` | Observed − calibrated baseline (signed unless `clip_negative`) |
-| `cpiv` | Cost per incremental visit (`cost / incremental_lift`) |
-| `conversion_rate` | Hourly CR weighted by sessions, ±1h neighborhood (when `apply_cr_model=True`) |
-| `key_event_response` | Estimated conversions: `incremental_lift × conversion_rate` |
-| `is_overlapping`, `collision_cluster_id` | Collision detection flags |
-| `attribution_method` | `single_spot_diurnal_exact`, `naive_proportional_fallback`, `insufficient_coverage`, or `insufficient_history` |
-
----
-
-## Explaining Results to Stakeholders
-
-Structure client-facing output as:
-
-1. **Executive Summary** — total spend, attributed lift, campaign CPIV, spot count.
-2. **Station/Creative Efficiency** — table ranked by CPIV (lowest = best).
-3. **Collision Diagnostics** — % isolated vs. overlapping spots; note proportional splitting.
-4. **Conversion Bridge** — when `key_event_response` is present, report estimated conversions and the CR used.
-5. **Methodological Disclaimer** — immediate direct response ≠ total ROI. TV also drives delayed conversions, brand search, and retail halo requiring MMM or clean-room analysis.
+| Field | Description | Engine |
+| :--- | :--- | :--- |
+| `spot_id`, `timestamp`, `channel`, `creative_id` | Spot identifiers | Both |
+| `cost`, `grp`, `duration_sec`, `program_genre` | Spot economic metadata | Both |
+| `baseline_volume` | Diurnal baseline traffic in response window | Both |
+| `observed_volume` | Total observed visits in response window | Both |
+| `incremental_lift` | Net incremental visits (signed unless `clip_negative`) | Both |
+| `cpiv` | Cost Per Incremental Visit (`cost / incremental_lift`) | Both |
+| `conversion_rate` | Local hourly conversion rate (±1h neighborhood) | Both |
+| `key_event_response` | Attributed conversions (`lift × conversion_rate`) | Both |
+| `is_overlapping`, `collision_cluster_id` | Overlap collision flags | Both |
+| `attribution_method` | `single_spot_diurnal_exact` (isolated) | Both |
+| | `weighted_share_attribution` (overlapping collisions) | Open-Core |
+| | `pro_em_shifted_gamma` (EM kernel deconvolution) | SpotLift Pro |
 
 ---
 
-## Pitfalls
+## Comparing Open-Core vs. SpotLift Pro
 
-- **Timezone misalignment** is the #1 error source. Always confirm the source timezone of broadcast logs before loading. A 1–2 hour offset makes spots miss their own response windows.
-- **`ga4_conversions` missing** — if the telemetry only contains sessions and no conversions channel, `apply_conversion_model` silently skips (CR and `key_event_response` stay `None`). Don't report zero conversions; report "conversion bridge not available."
-- **`zero_fill_gaps` vs `allow_interpolation`** — zero-fill inserts `0.0` for missing minutes; interpolation linearly bridges small gaps (≤3 min). Use zero-fill for GA4 exports that omit zero-activity rows; use interpolation for transient API hiccups.
-- **Collision bias** — overlapping spots get `naive_proportional_fallback`, which over-credits high-GRP stations. Flag this in client reports; recommend SpotLift Pro for EM deconvolution.
+When presenting results to stakeholders, follow this comparative structure:
 
----
-
-## Verification
-
-After running attribution, verify:
-
-- [ ] Every spot in the airings log has a result row (count match).
-- [ ] `incremental_lift` is non-negative when `clip_negative=True`.
-- [ ] Isolated spots have `attribution_method="single_spot_diurnal_exact"`.
-- [ ] `conversion_rate` is populated when `ga4_conversions` was present in telemetry.
-- [ ] No timezone-naive timestamps in the output (`results["timestamp"].dt.tz` is not `None`).
+1. **Isolated Spots (Exact Match):** Confirm that isolated spots yield identical lift between Open-Core and Pro (both use exact diurnal integration).
+2. **Colliding Spots (The Deconvolution Gap):** Explain that in overlapping windows, Open-Core distributes lift proportionally by spend/reach, whereas Pro deconvolves distinct Shifted-Gamma response curves. Highlight:
+   - Stations that were **over-credited** in Open-Core because they coasted on concurrent prime-time spikes.
+   - Stations that were **under-credited** in Open-Core because stronger spikes overshadowed them.
+3. **Creative Wear-Out ($N_{50}$):** Report whether any creatives have a `status == "FATIGUED"` with a half-life $N_{50}$ indicating response saturation.
+4. **Daypart / Station Efficiency:** Reference Pro efficiency matrices showing optimal dayparts (e.g. Daytime/Morning vs Prime Time).
+5. **Deliverables:** Provide clickable links to the generated standalone HTML and Excel reports.
