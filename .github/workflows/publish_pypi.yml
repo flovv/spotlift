@@ -29,8 +29,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install build
 
-      - name: Build sdist and wheel
-        run: python -m build
+      - name: Publish with API token (if PYPI_API_TOKEN secret exists)
+        if: "${{ secrets.PYPI_API_TOKEN != '' }}"
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
 
-      - name: Publish package distributions to PyPI
+      - name: Publish with Trusted Publishing (OIDC)
+        if: "${{ secrets.PYPI_API_TOKEN == '' }}"
         uses: pypa/gh-action-pypi-publish@release/v1
