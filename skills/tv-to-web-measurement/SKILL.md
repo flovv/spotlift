@@ -1,7 +1,7 @@
 ---
 name: tv-to-web-measurement
 description: Measure Linear TV lift from airings and GA4 telemetry.
-version: 0.2.0
+version: 0.2.2
 author: flovv (flovv), Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]

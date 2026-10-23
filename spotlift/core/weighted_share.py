@@ -14,10 +14,114 @@ attributed lift.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
+
+
+def compute_continuous_weighted_share(
+    times: Sequence[datetime | pd.Timestamp | str | float],
+    weights: Sequence[float],
+    window_seconds: float = 480.0,
+    clamp_pct: bool = True,
+) -> np.ndarray:
+    """Computes exact continuous-time weighted share of the response window.
+
+    Direct analytical port of the R Oviva pipeline's ``attrib_next6min_weighted``:
+    models overlapping treatment windows as continuous step functions. For each
+    spot k airing at time t_k with weight w_k over window [t_k, t_k + W],
+    the total weight active at time tau is W(tau) = sum_{j active at tau} w_j.
+    The analytical integral of w_k / W(tau) over [t_k, t_k + W] divided by W
+    gives each spot's exact attributed percentage in [0.0, 1.0].
+
+    Args:
+        times: Sequence of spot broadcast start times (datetimes or epoch seconds).
+        weights: Sequence of positive spot weights (e.g. GRP or cost).
+        window_seconds: Response window length in seconds (default: 480 = 8 min).
+        clamp_pct: If True (default), clamp attributed percentage to [0.0, 1.0].
+
+    Returns:
+        np.ndarray of shape (N,) containing each spot's attributed percentage.
+    """
+    n = len(times)
+    if n == 0:
+        return np.array([], dtype=np.float64)
+
+    first = times[0]
+    if isinstance(first, (int, float, np.number)):
+        t0 = np.array(times, dtype=np.float64)
+    else:
+        t0 = np.array([pd.Timestamp(t).timestamp() for t in times], dtype=np.float64)
+
+    w = np.array(weights, dtype=np.float64)
+    if len(w) != n:
+        raise ValueError(f"Length of times ({n}) and weights ({len(w)}) must match.")
+
+    # Fill NA or negative weights with 0.0
+    w = np.where(np.isnan(w) | (w < 0.0), 0.0, w)
+
+    starts = t0
+    ends = t0 + float(window_seconds)
+
+    idx_pos = np.where(w > 0.0)[0]
+    pct = np.zeros(n, dtype=np.float64)
+
+    if len(idx_pos) == 0:
+        return pct
+
+    # Change-point events
+    pos_starts = starts[idx_pos]
+    pos_ends = ends[idx_pos]
+    pos_weights = w[idx_pos]
+
+    pts = np.concatenate([pos_starts, pos_ends])
+    deltas = np.concatenate([pos_weights, -pos_weights])
+
+    # Aggregate deltas at identical time points
+    unique_pts, inverse = np.unique(pts, return_inverse=True)
+    del_u = np.bincount(inverse, weights=deltas)
+
+    # W(tau) after each change-point
+    w_after = np.cumsum(del_u)
+
+    seg_start = unique_pts[:-1]
+    seg_end = unique_pts[1:]
+    seg_len = seg_end - seg_start
+
+    keep = seg_len > 0
+    if not np.any(keep):
+        return pct
+
+    seg_start = seg_start[keep]
+    seg_end = seg_end[keep]
+    seg_len = seg_len[keep]
+    w_seg = w_after[:-1][keep]
+
+    inv_w = np.zeros_like(w_seg, dtype=np.float64)
+    np.divide(1.0, w_seg, out=inv_w, where=(w_seg > 0))
+    cum_area = np.concatenate(([0.0], np.cumsum(seg_len * inv_w)))
+
+    # Piecewise linear continuous integral evaluator G(q) = int_{seg_start[0]}^q (1 / W(tau)) dtau
+    def _eval_g(q_vals: np.ndarray) -> np.ndarray:
+        q_clamped = np.clip(q_vals, seg_start[0], seg_end[-1])
+        idx = np.searchsorted(seg_start, q_clamped, side="right") - 1
+        idx = np.clip(idx, 0, len(seg_start) - 1)
+        return cum_area[idx] + (q_clamped - seg_start[idx]) * inv_w[idx]
+
+    g_ends = _eval_g(pos_ends)
+    g_starts = _eval_g(pos_starts)
+    integral_inv_w = g_ends - g_starts
+
+    attr_sec = pos_weights * integral_inv_w
+    raw_pct = attr_sec / float(window_seconds)
+
+    if clamp_pct:
+        raw_pct = np.clip(raw_pct, 0.0, 1.0)
+
+    pct[idx_pos] = raw_pct
+    return pct
 
 
 def _spot_weights(airings: pd.DataFrame) -> np.ndarray:
@@ -118,7 +222,6 @@ def integrate_weighted_share_cluster(
         ]
 
     # Compute per-minute, per-spot share: surplus[t] * w_k / sum_w[t]
-    # Shape: (n_minutes, n_spots) — but we only need the per-spot sum
     per_spot_lift = np.zeros(n_spots, dtype=np.float64)
     per_spot_obs = np.zeros(n_spots, dtype=np.float64)
     per_spot_base = np.zeros(n_spots, dtype=np.float64)

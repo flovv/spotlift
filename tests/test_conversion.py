@@ -184,3 +184,24 @@ def test_analyze_spots_without_cr_model():
     )
     assert "conversion_rate" not in results.columns
     assert "key_event_response" not in results.columns
+
+
+def test_estimate_conversion_rate_midnight_boundary():
+    """Verify conversion rate estimation continuously bridges across midnight."""
+    hourly_df = pd.DataFrame([
+        {"day": pd.to_datetime("2026-03-15").date(), "hour": 22, "sessions": 100.0, "conversions": 2.0, "cr": 0.02},
+        {"day": pd.to_datetime("2026-03-15").date(), "hour": 23, "sessions": 100.0, "conversions": 3.0, "cr": 0.03},
+        {"day": pd.to_datetime("2026-03-16").date(), "hour": 0, "sessions": 100.0, "conversions": 4.0, "cr": 0.04},
+        {"day": pd.to_datetime("2026-03-16").date(), "hour": 1, "sessions": 100.0, "conversions": 5.0, "cr": 0.05},
+    ])
+    # Spot 1: 23:45 on 2026-03-15 -> neighborhood is 22:00 (03-15), 23:00 (03-15), 00:00 (03-16)
+    spot_1 = datetime(2026, 3, 15, 23, 45, tzinfo=timezone.utc)
+    cr_1 = estimate_conversion_rate_for_spot(spot_1, hourly_df, window_hours=1)
+    assert cr_1 is not None
+    assert pytest.approx(cr_1, rel=1e-4) == 0.03
+
+    # Spot 2: 00:15 on 2026-03-16 -> neighborhood is 23:00 (03-15), 00:00 (03-16), 01:00 (03-16)
+    spot_2 = datetime(2026, 3, 16, 0, 15, tzinfo=timezone.utc)
+    cr_2 = estimate_conversion_rate_for_spot(spot_2, hourly_df, window_hours=1)
+    assert cr_2 is not None
+    assert pytest.approx(cr_2, rel=1e-4) == 0.04

@@ -44,13 +44,18 @@ from spotlift.core.linear_regression_baseline import (
     compute_linear_regression_baseline,
 )
 from spotlift.core.single_spot import analyze_spots_core
+from spotlift.core.vectorized import integrate_isolated_spots_batch
+from spotlift.core.weighted_share import (
+    compute_continuous_weighted_share,
+    integrate_weighted_share_cluster,
+)
 from spotlift.io.fixtures import generate_dach_benchmark_dataset
 from spotlift.io.loaders import load_airings, load_telemetry
 from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_bigquery_sql
 from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
 from spotlift.pro.installer import install_pro
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 
 def analyze_spots(
@@ -96,6 +101,8 @@ def analyze_spots(
         baseline_fn: Optional callable baseline model conforming to ``BaselineFn``.
             If None, uses ``compute_diurnal_baseline`` (default). Pass
             ``simple_mean_baseline`` for short-history campaigns.
+        collision_attribution: Method for collision cluster attribution:
+            ``"weighted_share"`` (default) or ``"naive_proportional"``.
 
     Returns:
         pd.DataFrame containing spot-level attribution metrics.
@@ -126,6 +133,9 @@ def analyze_omnichannel_pro(
     export_excel: str | None = None,
     white_label_config: dict | None = None,
     clip_negative: bool = False,
+    apply_cr_model: bool = True,
+    conversions_source: str = "ga4_conversions",
+    cr_window_hours: int = 1,
 ) -> dict:
     """Pro entry point (dispatches to compiled `spotlift_pro` binary).
 
@@ -145,6 +155,9 @@ def analyze_omnichannel_pro(
         white_label_config: Agency branding dict (agency_name, logo_url, primary_color_hex).
         clip_negative: If False (default), preserves signed lift (allowing negative lift to
             prevent upward noise rectification bias). If True, clips lift at 0.0.
+        apply_cr_model: If True (default), apply conversion-rate bridge if conversions data present.
+        conversions_source: Channel-source label for conversion events (default: "ga4_conversions").
+        cr_window_hours: Half-width of the hour neighborhood for CR estimation (default: 1).
 
     Returns:
         dict containing 'spots_df', 'creative_wearout', 'efficiency_matrices',
@@ -161,6 +174,9 @@ def analyze_omnichannel_pro(
         export_excel=export_excel,
         white_label_config=white_label_config,
         clip_negative=clip_negative,
+        apply_cr_model=apply_cr_model,
+        conversions_source=conversions_source,
+        cr_window_hours=cr_window_hours,
     )
 
 
@@ -181,6 +197,7 @@ __all__ = [
     "analyze_omnichannel_pro",
     "analyze_spots",
     "apply_conversion_model",
+    "compute_continuous_weighted_share",
     "compute_diurnal_baseline",
     "compute_hourly_conversion_rates",
     "compute_linear_regression_baseline",
@@ -189,6 +206,8 @@ __all__ = [
     "generate_dach_benchmark_dataset",
     "generate_ga4_bigquery_sql",
     "install_pro",
+    "integrate_isolated_spots_batch",
+    "integrate_weighted_share_cluster",
     "is_pro_available",
     "load_airings",
     "load_telemetry",

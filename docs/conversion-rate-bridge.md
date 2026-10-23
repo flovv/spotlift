@@ -14,7 +14,7 @@ attributed session lift:
 $$\text{key\_event\_response}_k = \text{incremental\_lift}_k \times \text{CR}(t_k)$$
 
 where $\text{CR}(t_k)$ is the session-volume-weighted mean conversion rate in the
-±1-hour neighborhood of spot $k$'s timestamp, on the same calendar day.
+±1-hour neighborhood of spot $k$'s timestamp.
 
 ---
 
@@ -40,8 +40,8 @@ but no conversion estimate is produced.
 ### Step 2: Session-Volume-Weighted CR per Spot
 
 For a spot airing at timestamp $t_k$, the CR is estimated as the weighted mean
-of the hourly CR values in the neighborhood $[h_k - 1, h_k + 1]$ on the same
-day, weighted by session volume:
+of the hourly CR values in the continuous neighborhood $[h_k - 1, h_k + 1]$,
+weighted by session volume:
 
 $$\text{CR}(t_k) = \frac{\sum_{h \in [h_k-1, h_k+1]} \text{CR}_{d_k, h} \times \text{sessions}_{d_k, h}}{\sum_{h \in [h_k-1, h_k+1]} \text{sessions}_{d_k, h}}$$
 
@@ -53,7 +53,9 @@ that actually carry traffic, reducing noise from low-volume periods.
 **Why ±1 hour?** TV response is immediate (within 5–15 minutes), but the
 conversion may happen slightly later (browsing → checkout takes 5–30 min).
 The ±1 hour window captures the CR of the surrounding traffic context without
-averaging across unrelated dayparts (e.g. daytime vs. prime time).
+averaging across unrelated dayparts (e.g. daytime vs. prime time). The continuous
+window also seamlessly bridges across calendar-day boundaries at midnight (e.g.
+for spots airing at 23:45 or 00:15).
 
 ### Step 3: Key Event Response
 
@@ -205,9 +207,11 @@ The protocol requires:
    at a systematically different rate (e.g. higher brand intent), the estimate
    will be biased. For non-linear effects, use SpotLift Pro's EM deconvolution.
 
-2. **Same-day only:** The CR is computed from the same calendar day as the spot.
-   Cross-day conversion paths (e.g. spot at 11 PM, conversion at 9 AM next day)
-   are not captured by this bridge.
+2. **Continuous neighborhood across midnight:** The CR is computed in a continuous
+   ±1-hour window around the spot timestamp, bridging smoothly across midnight
+   (e.g. 23:00 to 01:00). Delayed conversion paths that span multiple days (e.g.
+   spot on Monday, conversion on Wednesday) are not captured by this immediate
+   bridge (use SpotLift Pro's 36-hour distributed lag solver for delayed response).
 
 3. **Requires both channels:** If `ga4_conversions` is missing from the
    telemetry, no estimate is produced. Ensure your GA4 export includes conversion

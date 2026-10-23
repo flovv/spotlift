@@ -32,6 +32,10 @@ def dispatch_omnichannel_pro(
     export_excel: str | None = None,
     white_label_config: dict | None = None,
     clip_negative: bool = False,
+    apply_cr_model: bool = True,
+    conversions_source: str = "ga4_conversions",
+    cr_window_hours: int = 1,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """Safely dispatches call to compiled `spotlift_pro` binary.
 
@@ -67,4 +71,8 @@ def dispatch_omnichannel_pro(
         export_excel=export_excel,
         white_label_config=white_label_config,
         clip_negative=clip_negative,
+        apply_cr_model=apply_cr_model,
+        conversions_source=conversions_source,
+        cr_window_hours=cr_window_hours,
+        **kwargs,
     )

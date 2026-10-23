@@ -210,3 +210,57 @@ def test_weighted_share_grp_weighting():
     s2_lift = records[1]["incremental_lift"]
     if s1_lift is not None and s2_lift is not None:
         assert s2_lift > s1_lift, f"S2 ({s2_lift}) should have more lift than S1 ({s1_lift})"
+
+
+# ─── Continuous step-function weighted share (Oviva R analytical port) ──────
+
+
+def test_continuous_weighted_share_isolated():
+    """Isolated spots without overlap receive 100% (1.0) share."""
+    from spotlift.core.weighted_share import compute_continuous_weighted_share
+
+    times = [0.0, 1000.0]
+    weights = [2.5, 4.0]
+    shares = compute_continuous_weighted_share(times, weights, window_seconds=480.0)
+    assert len(shares) == 2
+    assert pytest.approx(shares[0], rel=1e-5) == 1.0
+    assert pytest.approx(shares[1], rel=1e-5) == 1.0
+
+
+def test_continuous_weighted_share_exact_overlap():
+    """Spots airing simultaneously split share according to weights."""
+    from spotlift.core.weighted_share import compute_continuous_weighted_share
+
+    times = [100.0, 100.0]
+    weights = [10.0, 30.0]
+    shares = compute_continuous_weighted_share(times, weights, window_seconds=480.0)
+    assert pytest.approx(shares[0], rel=1e-5) == 0.25
+    assert pytest.approx(shares[1], rel=1e-5) == 0.75
+
+
+def test_continuous_weighted_share_partial_overlap():
+    """Spots with partial overlap receive analytically exact integrated shares."""
+    from spotlift.core.weighted_share import compute_continuous_weighted_share
+
+    # Window = 400s. Spot 1: [0, 400], Spot 2: [200, 600]. Both weights = 5.0.
+    # Non-overlapping intervals [0, 200] and [400, 600]: weight=5, inv=0.2.
+    # Overlapping interval [200, 400]: weight=10, inv=0.1.
+    # Spot 1 integral: 200 * 0.2 + 200 * 0.1 = 40 + 20 = 60.
+    # Attr sec = 5.0 * 60 = 300s. Pct = 300 / 400 = 0.75.
+    times = [0.0, 200.0]
+    weights = [5.0, 5.0]
+    shares = compute_continuous_weighted_share(times, weights, window_seconds=400.0)
+    assert pytest.approx(shares[0], rel=1e-5) == 0.75
+    assert pytest.approx(shares[1], rel=1e-5) == 0.75
+
+
+def test_continuous_weighted_share_sub_minute_timestamps():
+    """Sub-minute timestamps (fractional seconds) work seamlessly."""
+    from spotlift.core.weighted_share import compute_continuous_weighted_share
+
+    t0 = datetime(2026, 3, 15, 20, 14, 15, tzinfo=timezone.utc)
+    t1 = datetime(2026, 3, 15, 20, 16, 45, tzinfo=timezone.utc)
+    shares = compute_continuous_weighted_share([t0, t1], [2.0, 2.0], window_seconds=360.0)
+    assert len(shares) == 2
+    assert 0.0 < shares[0] < 1.0
+    assert 0.0 < shares[1] < 1.0

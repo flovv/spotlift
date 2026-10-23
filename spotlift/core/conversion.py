@@ -1,13 +1,14 @@
 """Hourly conversion-rate bridge: session lift → key-event / purchase lift.
 
 Inspired by the original R production pipeline (Inhouse Spotlights), which
-estimates a hourly conversion rate (CR) from GA4 sessions and key events,
+estimates an hourly conversion rate (CR) from GA4 sessions and key events,
 then bridges attributed session lift to purchase / key-event lift via:
 
     key_event_response = sessions_response × CR(t)
 
 where CR(t) is the session-volume-weighted mean conversion rate over the
-±1-hour neighborhood of the spot timestamp, on the same calendar day.
+±1-hour neighborhood of the spot timestamp, continuously evaluated across
+calendar-day boundaries (including midnight).
 """
 
 from __future__ import annotations
@@ -72,15 +73,15 @@ def estimate_conversion_rate_for_spot(
     hourly_cr: pd.DataFrame,
     window_hours: int = 1,
 ) -> float | None:
-    """Session-volume-weighted CR for the ±window_hours neighborhood.
+    """Session-volume-weighted CR for the ±window_hours continuous neighborhood.
 
-    Mirrors the R pipeline's ``getConversionModel``: for the spot's calendar
-    day, compute a weighted mean of the hourly CR over the
+    Mirrors and extends the R pipeline's ``getConversionModel``: computes a
+    weighted mean of the hourly CR over the continuous
     [hour - window_hours, hour + window_hours] range, weighted by session
-    volume.
+    volume. Correctly spans calendar-day boundaries across midnight.
 
     Args:
-        spot_timestamp: UTC-aware spot start timestamp.
+        spot_timestamp: Spot start timestamp (UTC-aware or naive assumed UTC).
         hourly_cr: DataFrame from :func:`compute_hourly_conversion_rates`.
         window_hours: Half-width of the hour neighborhood (default: 1, i.e.
             ±1 hour).
@@ -94,13 +95,23 @@ def estimate_conversion_rate_for_spot(
     ts = pd.Timestamp(spot_timestamp)
     if ts.tzinfo is not None:
         ts = ts.tz_convert("UTC")
+    else:
+        ts = ts.tz_localize("UTC")
 
-    spot_day = ts.date()
-    spot_hour = ts.hour
+    spot_hour_ts = ts.floor("h")
+    start_window = spot_hour_ts - pd.Timedelta(hours=window_hours)
+    end_window = spot_hour_ts + pd.Timedelta(hours=window_hours)
 
-    mask = (hourly_cr["day"] == spot_day) & (
-        hourly_cr["hour"].between(spot_hour - window_hours, spot_hour + window_hours)
-    )
+    if "_ts" in hourly_cr.columns:
+        cr_ts = hourly_cr["_ts"]
+    elif "timestamp" in hourly_cr.columns:
+        cr_ts = pd.to_datetime(hourly_cr["timestamp"], utc=True)
+    elif "day" in hourly_cr.columns and "hour" in hourly_cr.columns:
+        cr_ts = pd.to_datetime(hourly_cr["day"], utc=True) + pd.to_timedelta(hourly_cr["hour"], unit="h")
+    else:
+        return None
+
+    mask = (cr_ts >= start_window) & (cr_ts <= end_window)
     subset = hourly_cr[mask]
 
     if subset.empty:
@@ -143,6 +154,9 @@ def apply_conversion_model(
     hourly_cr = compute_hourly_conversion_rates(
         telemetry, sessions_source=sessions_source, conversions_source=conversions_source
     )
+    if not hourly_cr.empty:
+        hourly_cr = hourly_cr.copy()
+        hourly_cr["_ts"] = pd.to_datetime(hourly_cr["day"], utc=True) + pd.to_timedelta(hourly_cr["hour"], unit="h")
 
     crs: list[float | None] = []
     key_event_responses: list[float | None] = []
