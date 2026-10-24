@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -50,7 +51,7 @@ def generate_dach_benchmark_dataset(
         0.07, 0.06, 0.05, 0.06, 0.07, 0.08,
         0.11, 0.16, 0.18, 0.16, 0.10, 0.04,
     ]
-    p_weights = np.array(hour_weights, dtype=np.float64) / sum(hour_weights)
+    p_weights = np.array(hour_weights, dtype=np.float64) / float(sum(hour_weights))
 
     spot_indices = range(n_spots)
     # We will pick days uniformly across campaign
@@ -306,7 +307,7 @@ def generate_omnichannel_amc_dataset(
         0.07, 0.06, 0.06, 0.07, 0.08, 0.09,
         0.12, 0.16, 0.18, 0.14, 0.08, 0.03,
     ]
-    p_weights = np.array(hour_weights, dtype=np.float64) / sum(hour_weights)
+    p_weights = np.array(hour_weights, dtype=np.float64) / float(sum(hour_weights))
 
     spot_days = rng.integers(0, n_days, size=n_spots)
     spot_hours = rng.choice(24, size=n_spots, p=p_weights)
@@ -601,7 +602,7 @@ def generate_us_state_dataset(
     campaign_end = campaign_start + timedelta(days=n_days)
     total_end = campaign_end
 
-    state_markets = {
+    state_markets: dict[str, dict[str, Any]] = {
         "CA": {
             "dmas": ["Los Angeles", "San Francisco-Oakland"],
             "stations": ["KTLA-CW", "KABC-ABC", "KNBC-NBC", "KPIX-CBS"],
@@ -636,7 +637,7 @@ def generate_us_state_dataset(
         },
     }
 
-    control_states = {
+    control_states: dict[str, dict[str, Any]] = {
         "IL": {"pop_weight": 0.04, "base_traffic": 48.0},
         "PA": {"pop_weight": 0.04, "base_traffic": 46.0},
         "OH": {"pop_weight": 0.035, "base_traffic": 40.0},
@@ -651,7 +652,7 @@ def generate_us_state_dataset(
         0.07, 0.06, 0.06, 0.07, 0.08, 0.09,
         0.12, 0.16, 0.18, 0.14, 0.08, 0.03,
     ]
-    p_weights = np.array(hour_weights, dtype=np.float64) / sum(hour_weights)
+    p_weights = np.array(hour_weights, dtype=np.float64) / float(sum(hour_weights))
 
     spot_days = rng.integers(0, n_days, size=n_spots)
     spot_hours = rng.choice(24, size=n_spots, p=p_weights)
@@ -659,14 +660,14 @@ def generate_us_state_dataset(
     spot_seconds = rng.choice([0, 15, 30, 45], size=n_spots)
 
     test_state_keys = list(state_markets.keys())
-    state_probs = [state_markets[k]["pop_weight"] for k in test_state_keys]
-    state_probs = np.array(state_probs) / sum(state_probs)
+    raw_state_probs = [float(state_markets[k]["pop_weight"]) for k in test_state_keys]
+    state_probs = np.array(raw_state_probs, dtype=np.float64) / float(sum(raw_state_probs))
 
     airing_rows = []
-    state_spot_lifts = {k: {} for k in test_state_keys}
+    state_spot_lifts: dict[str, dict[str, tuple[datetime, float]]] = {k: {} for k in test_state_keys}
 
     for i in range(n_spots):
-        st = rng.choice(test_state_keys, p=state_probs)
+        st = str(rng.choice(test_state_keys, p=state_probs))
         st_cfg = state_markets[st]
         d = int(spot_days[i])
         h = int(spot_hours[i])
@@ -674,13 +675,13 @@ def generate_us_state_dataset(
         s = int(spot_seconds[i])
         dt = campaign_start + timedelta(days=d, hours=h, minutes=m, seconds=s)
 
-        ch = rng.choice(st_cfg["stations"])
-        dma = rng.choice(st_cfg["dmas"])
-        cr = rng.choice(creatives, p=[0.6, 0.4])
+        ch = str(rng.choice(list(st_cfg["stations"])))
+        dma = str(rng.choice(list(st_cfg["dmas"])))
+        cr = str(rng.choice(creatives, p=[0.6, 0.4]))
         dur = 30 if "30S" in cr else 15
         is_primetime = 19 <= h <= 22
         grp = rng.uniform(2.0, 4.8) if is_primetime else rng.uniform(0.5, 1.8)
-        base_cost = 1800.0 * st_cfg["cost_mult"] * (grp / 2.0) * rng.uniform(0.92, 1.08)
+        base_cost = 1800.0 * float(st_cfg["cost_mult"]) * (float(grp) / 2.0) * float(rng.uniform(0.92, 1.08))
 
         spot_id = f"US_SPOT_{i+1:05d}"
         row = {
@@ -697,7 +698,7 @@ def generate_us_state_dataset(
         }
         airing_rows.append(row)
 
-        lift = grp * st_cfg["lift_rate"] * rng.uniform(0.9, 1.1)
+        lift = float(grp) * float(st_cfg["lift_rate"]) * float(rng.uniform(0.9, 1.1))
         state_spot_lifts[st][spot_id] = (dt, lift)
 
     airings_df = pd.DataFrame(airing_rows).sort_values("timestamp").reset_index(drop=True)
@@ -727,11 +728,12 @@ def generate_us_state_dataset(
 
     # 1. Active Test States (with localized TV lift injection)
     for st, cfg in state_markets.items():
-        base_arr = np.array([get_diurnal(m, cfg["base_traffic"]) for m in mod_arr])
-        noise = rng.normal(0, cfg["base_traffic"] * 0.05, size=n_mins)
+        base_traffic = float(cfg["base_traffic"])
+        base_arr = np.array([get_diurnal(m, base_traffic) for m in mod_arr])
+        noise = rng.normal(0, base_traffic * 0.05, size=n_mins)
         obs_sessions = np.maximum(2.0, base_arr + noise)
 
-        for sid, (s_dt, lift_val) in state_spot_lifts[st].items():
+        for s_dt, lift_val in state_spot_lifts[st].values():
             s_ts = pd.Timestamp(s_dt).floor("min")
             s_idx = int((s_ts.timestamp() - start_ts_sec) // 60)
             for tau in range(W_post + 1):
@@ -752,8 +754,9 @@ def generate_us_state_dataset(
 
     # 2. Control/Holdout States (Zero TV spend, pure organic baseline)
     for st, cfg in control_states.items():
-        base_arr = np.array([get_diurnal(m, cfg["base_traffic"]) for m in mod_arr])
-        noise = rng.normal(0, cfg["base_traffic"] * 0.05, size=n_mins)
+        base_traffic = float(cfg["base_traffic"])
+        base_arr = np.array([get_diurnal(m, base_traffic) for m in mod_arr])
+        noise = rng.normal(0, base_traffic * 0.05, size=n_mins)
         obs_sessions = np.maximum(1.0, base_arr + noise)
 
         for i, ts in enumerate(minute_timestamps):

@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
-import spotlift as sl
 from spotlift.io.fixtures import (
-    generate_dach_benchmark_dataset,
     generate_omnichannel_amc_dataset,
     generate_us_state_dataset,
 )
@@ -20,16 +17,16 @@ def test_generate_omnichannel_amc_dataset_contracts():
 
     assert not airings_df.empty
     assert len(airings_df) == 30
-    assert set(["spot_id", "timestamp", "channel", "creative_id", "cost", "grp"]).issubset(airings_df.columns)
+    assert {"spot_id", "timestamp", "channel", "creative_id", "cost", "grp"}.issubset(airings_df.columns)
 
     # GA4 telemetry validation
     assert not ga4_df.empty
-    assert set(["timestamp", "channel_source", "value"]).issubset(ga4_df.columns)
+    assert {"timestamp", "channel_source", "value"}.issubset(ga4_df.columns)
     assert set(ga4_df["channel_source"].unique()) == {"ga4_direct_organic_sessions", "ga4_conversions"}
 
     # AMC Clean Room conversions structure
     assert not amc_convs_df.empty
-    assert set(["spot_id", "spot_time", "period", "kind", "event_subtype", "conversions"]).issubset(
+    assert {"spot_id", "spot_time", "period", "kind", "event_subtype", "conversions"}.issubset(
         amc_convs_df.columns
     )
     event_subtypes = set(amc_convs_df["event_subtype"].unique())
@@ -44,7 +41,7 @@ def test_generate_omnichannel_amc_dataset_contracts():
 
 
 def test_amc_ga_lift_correlation():
-    airings_df, ga4_df, amc_convs_df, _ = generate_omnichannel_amc_dataset(
+    airings_df, _ga4_df, amc_convs_df, _ = generate_omnichannel_amc_dataset(
         n_days=7,
         n_spots=100,
         seed=123,

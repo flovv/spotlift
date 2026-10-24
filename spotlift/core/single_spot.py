@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -286,7 +287,7 @@ def analyze_spots_core(
     baseline_days: int = 21,
     clip_negative: bool = False,
     apply_cr_model: bool = True,
-    conversions_source: str = "ga4_conversions",
+    conversions_source: str | Sequence[str] = "ga4_conversions",
     cr_window_hours: int = 1,
     baseline_fn: BaselineFn | None = None,
     collision_attribution: str = "weighted_share",
