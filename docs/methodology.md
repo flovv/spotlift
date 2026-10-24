@@ -145,3 +145,43 @@ When conversion telemetry is provided (see the [Conversion-Rate Bridge](/convers
 $$
 \text{CPKE}_i = \frac{\text{Net Spend}_i}{\text{Key Event Response}_i}
 $$
+
+---
+
+## 7. Regional / State-Level Spot TV, SNR Dilution & Holdout Control Proof
+
+In large fragmented markets such as the United States, advertisers frequently buy **Regional Spot TV** (local broadcast affiliates, regional sports networks, or DMA/state-targeted CTV) in specific target states (e.g., `TX`, `FL`, `PA`) rather than national cable.
+
+### The Signal-to-Noise Ratio (SNR) Dilution Problem
+
+Suppose a regional spot in Texas generates $\Delta_{\text{TX}} = +85$ incremental sessions against a Texas baseline of $\mu_{\text{TX}} = 40\text{ sessions/min}$ ($\sigma_{\text{TX}} \approx 6.3$).
+* **Evaluated against State-Filtered Telemetry (`TX`):** The signal-to-noise ratio in an 8-minute window is $\text{SNR}_{\text{TX}} = \frac{85}{\sqrt{8 \cdot 40}} \approx \mathbf{4.75\sigma}$ (highly detectable).
+* **Evaluated against National US Telemetry (`US_NATIONAL`):** National baseline traffic is $\mu_{\text{US}} \approx 450\text{ sessions/min}$ ($\sigma_{\text{US}} \approx 21.2$). The exact same 85-session lift is buried in national variance: $\text{SNR}_{\text{US}} = \frac{85}{\sqrt{8 \cdot 450}} \approx \mathbf{1.42\sigma}$ (statistically indistinguishable from random noise).
+
+Therefore, regional Spot TV **must** be attributed by matching each airing's `country_or_region` against state-filtered GA4 telemetry (`geo.region` in BigQuery).
+
+### Empirical Holdout Control Validation
+
+Because SpotLift preserves signed lift (`clip_negative=False`) by default, non-airing states (`CA`, `NY`, `IL`) serve as a rigorous **Empirical Placebo / Holdout Control**. Evaluating placebo airings against untouched control states proves zero upward bias:
+
+| Geo Segment | Role | Spots | True Simulated Lift | Open-Core Attributed Lift | Pro EM Deconvolved Lift | CPIV |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **`TX` (Texas)** | Regional Spot TV | 54 | `2,970` | `2,980` | **`2,982`** | `$15.27` |
+| **`FL` (Florida)** | Regional Spot TV | 48 | `2,566` | `2,216` | **`2,232`** | `$14.70` |
+| **`PA` (Pennsylvania)** | Regional Spot TV | 28 | `1,304` | `1,401` | **`1,432`** | `$14.59` |
+| **Active Target States Total** | **Treatment** | **130** | **`6,840`** | **`6,597` (96.4%)** | **`6,645` (97.1%)** | **`$14.93`** |
+| **`CA` / `NY` / `IL` (Holdout)** | **0 TV Airings (Placebo)** | *130 placebo* | **`0`** | **`-52` (~0 noise)** | **`0`** | — |
+
+---
+
+## 8. Branded Search Best Practice: Two-Tier Model
+
+Should branded search traffic be included or excluded when measuring TV-to-Web lift? SpotLift enforces a **Two-Tier Best Practice** that distinguishes between **Organic Branded Search** and **Paid Branded Search**:
+
+### Tier 1: Include Organic Branded Search (`ga4_direct_organic_sessions`)
+Viewers who see a TV ad rarely type the full URL with `.com` directly into the address bar—they type the brand name into Google, Safari, or Chrome search bars. Excluding organic search discards **40%–65% of genuine TV-driven response**. `sl.generate_ga4_bigquery_sql()` automatically includes `medium IN ('(none)', 'organic')`.
+
+### Tier 2: Exclude Paid Branded Search from Default Web Baseline, Audit Separately (`paid_search_branded`)
+Including `cpc` / Paid Branded Search in the default baseline is dangerous because Google Ads automated bidding (`tROAS` / `tCPA`) reacts to TV spikes by aggressively bidding up on brand keywords, which can double-count paid clicks or distort the baseline when daily budgets cap out.
+* **Best Practice:** Keep Paid Branded Search out of `ga4_direct_organic_sessions` by default.
+* **When Competitors Bid on Your Brand Terms (High-CPC Category Defense):** Export `paid_search_branded` as a separate `channel_source` and pass it to `sl.analyze_omnichannel_pro()`. SpotLift Pro's **Branded Search Cannibalization Audit** separates genuinely incremental TV-driven paid search visitors from tax-like cannibalization of organic traffic.

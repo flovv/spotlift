@@ -9,7 +9,7 @@ def generate_ga4_bigquery_sql(
     start_date: str = "2026-03-01",
     end_date: str = "2026-03-21",
     include_conversions: bool = True,
-    conversion_event_name: str = "purchase",
+    conversion_event_name: str | Sequence[str] = "purchase",
 ) -> str:
     """Generates standard Google Analytics 4 (GA4) BigQuery extraction SQL.
 
@@ -33,17 +33,25 @@ def generate_ga4_bigquery_sql(
     conversions_cte = ""
     conversions_union = ""
     if include_conversions:
+        if isinstance(conversion_event_name, str):
+            source_expr = "'ga4_conversions'"
+            event_filter = f"event_name = '{conversion_event_name}'"
+        else:
+            event_list = ", ".join(f"'{ev}'" for ev in conversion_event_name)
+            source_expr = "event_name"
+            event_filter = f"event_name IN ({event_list})"
+
         conversions_cte = f""",
 conversion_events AS (
   SELECT
     TIMESTAMP_TRUNC(TIMESTAMP_MICROS(event_timestamp), MINUTE, 'UTC') AS timestamp,
-    'ga4_conversions' AS channel_source,
+    {source_expr} AS channel_source,
     CAST(COUNT(*) AS FLOAT64) AS value
   FROM
     `{project_id}.{dataset_id}.events_*`
   WHERE
     _TABLE_SUFFIX BETWEEN '{clean_start}' AND '{clean_end}'
-    AND event_name = '{conversion_event_name}'
+    AND {event_filter}
   GROUP BY
     1, 2
 )"""

@@ -68,14 +68,46 @@ Running Open-Core Diagnostic Attribution Pass:
 > 
 > However, **immediate web lift is NOT total TV ROI**. Television generates substantial delayed word-of-mouth, brand equity, retail sales (physical retail and Amazon), and durable baseline traffic over weeks and months. Full causal campaign ROI should be evaluated using aggregate econometric methods such as Marketing Mix Modeling (MMM) or randomized geo-holdout experiments.
 
-### 2. Unbiased Signed Lift Accounting
+### 2. Unbiased Signed Lift Accounting & Holdout Control Proof
 Standard commercial attribution tools commonly clip negative minute differences to zero: $\max(0, Y_t - \hat{Y}_t)$. By Jensen's inequality, non-linear rectification turns zero-mean background traffic noise into strictly positive phantom lift ($\mathbb{E}[\max(0, \epsilon)] \approx 0.4\sigma$). 
 
 SpotLift preserves **signed residuals** (`clip_negative=False` by default) so background noise cancels out symmetrically across spots and stations, preventing artificial inflation of campaign performance.
 
-### 3. Amazon Telemetry: AMC Clean Rooms (Not Vendor Central)
+**Empirical Validation on US State-Level Spot TV (`generate_us_state_dataset`):**
+When evaluating regional Spot TV across 4 active states (`CA`, `TX`, `FL`, `NY`) alongside 3 unexposed holdout control states (`IL`, `OH`, `PA`) receiving zero TV spend:
+
+| State | Campaign Status | Spots | Media Spend | Attributed Session Lift | Attributed Conversions | State CPIV |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Florida (`FL`)** | **Exposed (Test)** | 112 | \$179,160 | **+14,269.5** | 371.7 | **\$12.56** |
+| **Texas (`TX`)** | **Exposed (Test)** | 114 | \$226,989 | **+17,261.7** | 449.0 | **\$13.15** |
+| **California (`CA`)** | **Exposed (Test)** | 188 | \$451,280 | **+33,556.4** | 865.4 | **\$13.45** |
+| **New York (`NY`)** | **Exposed (Test)** | 86 | \$176,119 | **+12,146.8** | 313.0 | **\$14.50** |
+| **Illinois (`IL`)** | **Control (Zero Spend)** | 0 | \$0.00 | **-26.6** | 0.0 | *Zero-Mean Noise* |
+| **Ohio (`OH`)** | **Control (Zero Spend)** | 0 | \$0.00 | **+32.2** | 0.0 | *Zero-Mean Noise* |
+| **Pennsylvania (`PA`)** | **Control (Zero Spend)** | 0 | \$0.00 | **-117.9** | 0.0 | *Zero-Mean Noise* |
+
+### 3. Amazon Telemetry: Dual AMC Clean Room Architectures
 > [!NOTE]
-> Standard Amazon Vendor Central and Seller Central portals only provide aggregated daily or weekly reports—never minute or hourly data. The **only** enterprise mechanism to collect sub-daily Amazon conversion response and PPC spikes is via **Amazon Marketing Cloud (AMC)** SQL clean rooms (`amazon_attributed_events_by_traffic_time` and `sponsored_ads_traffic`). SpotLift provides built-in query generation for AMC (`spotlift sql --source amc`).
+> Standard Amazon Vendor Central and Seller Central portals only provide aggregated daily or weekly reports—never minute or hourly data. Sub-daily Amazon conversion response and PPC spikes require **Amazon Marketing Cloud (AMC)** SQL clean rooms. SpotLift supports both enterprise AMC export structures:
+> 1. **Per-Spot Pre/Post Windowed Funnel (`analyze_amc_spot_conversions`):** Queries 60-minute pre-spot baselines vs. 15-minute post-spot windows per airing across `pageViewStarts` (Detail Page Views), `addToCart`, and `order` events—designed to comply with AMC's Athena/Presto aggregation thresholds.
+> 2. **Hourly Marketplace Telemetry (`analyze_omnichannel_pro`):** Continuous hourly streams (`amz_ordered_units`, `amz_ordered_gmv`, `amz_sponsored_brand_clicks`) for 36-hour distributed lag modeling and Sponsored Brands PPC cannibalization auditing.
+
+### 4. Branded Search Best Practice (Two-Tier Model)
+* **Organic Branded Search is INCLUDED (`ga4_direct_organic_sessions`):** On mobile devices, the browser address bar doubles as a search bar. Viewers typing your brand name into Google or Safari are executing TV-driven navigation; excluding organic brand search discards 30–50% of immediate broadcast lift.
+* **Generic Paid Search is EXCLUDED:** Non-brand category keywords reflect baseline market intent rather than broadcast response.
+* **Paid Branded Search (PPC Interception Audit):** Rather than mixing paid brand clicks into organic sessions (which double-counts conversions) or ignoring them (which under-attributes TV when paid ads intercept top-of-SERP clicks), SpotLift Pro's `audit_amazon_ppc_cannibalization()` and AMC `branded_search_interception` SQL template quantify how much paid brand spend merely cannibalized TV-driven organic intent versus defended against competitor conquesting (`competitor_sov`).
+
+### 5. Custom GA4 Sales & Multi-Stage Funnel Events
+Clients frequently track custom GA4 key events beyond standard e-commerce `purchase` (e.g., `key_event_survey_submitted`, `key_event_subscription_purchase`, `lead_submitted`, or `add_to_cart`).
+* Pass any custom event name (or a list of custom funnel events) to `conversions_source`:
+  ```python
+  results = sl.analyze_spots(
+      airings=airings,
+      web_telemetry=telemetry,
+      conversions_source=["key_event_survey_submitted", "key_event_subscription_purchase"],
+  )
+  ```
+* SpotLift automatically computes the hourly session-weighted conversion rate $\text{CR}(t_k)$ in the $\pm 1\text{h}$ neighborhood of each spot and appends per-event attributed columns (`cr_<event>` and `response_<event>`).
 
 ---
 
@@ -228,6 +260,27 @@ station_summary = (
     .sort_values("cpiv")
 )
 print(station_summary)
+```
+
+---
+
+## Built-In Synthetic Benchmark Datasets
+
+SpotLift ships with three domain-calibrated synthetic dataset generators in `spotlift.io.fixtures` (requiring zero external credentials) to test DACH national, US omnichannel AMC, and US regional Spot TV workflows:
+
+```python
+import spotlift as sl
+
+# 1. DACH National Broadcast + GA4 + 36h Amazon Halo (RTL, ProSieben, VOX, Joyn)
+airings_dach, ga4_dach, amz_dach = sl.generate_dach_benchmark_dataset(n_days=14, n_spots=600)
+
+# 2. US Omnichannel + Amazon AMC Clean Room Funnel (pageViewStarts, addToCart, order)
+#    Models correlated DTC web & Amazon response (r ≈ 0.75–0.85) across NBC, CBS, ESPN, Bravo, Hulu-CTV
+airings_us, ga4_us, amc_convs, amc_hourly = sl.generate_omnichannel_amc_dataset(n_days=14, n_spots=400)
+
+# 3. US Regional / State-Level Spot TV (Active: CA, TX, FL, NY | Holdout Controls: IL, OH, PA)
+#    Prevents 8x–10x national signal dilution and validates zero false-positive lift in unexposed states
+state_airings, state_telemetry = sl.generate_us_state_dataset(n_days=14, n_spots=500)
 ```
 
 ---

@@ -54,30 +54,74 @@ Automatically measures the **Cannibalization Index**:
 
 ---
 
-## Running Omnichannel Attribution in SpotLift Pro
+## Two Distinct AMC Data Structures
 
-With **SpotLift Pro**, you pass both GA4 web telemetry and Amazon AMC telemetry into a unified attribution pipeline:
+Because Amazon Marketing Cloud (AMC) operates as a privacy-preserving SQL clean room on AWS Athena/Presto, advertisers cannot export raw minute-by-minute user logs. SpotLift supports **both** standard enterprise AMC export architectures:
+
+### Architecture A: Per-Spot Pre/Post Windowed Funnel (`amc_spot_conversions.csv`)
+Queries AMC conversion tables in paired observation windows around each broadcast spot (e.g., **60 minutes pre-spot** baseline vs. **15 minutes post-spot** response) across three marketplace funnel stages:
+* `pageViewStarts` / `detailPageView` (DPV): Shopper views the product detail page on Amazon.
+* `addToCart` (ATC): High-intent mid-funnel cart addition.
+* `order`: Completed Amazon purchase.
 
 ```python
-import spotlift
+import spotlift as sl
+from spotlift_pro.amc_ingestion import analyze_amc_spot_conversions
 
-airings = spotlift.load_airings("tv_schedule.csv")
-web_telemetry = spotlift.load_telemetry("ga4_sessions.csv")
-amz_telemetry = spotlift.load_telemetry("amc_hourly_units.csv")
+# Generate synthetic US Omnichannel + AMC benchmark (400 spots)
+airings_df, ga4_df, amc_conv_df, amc_hourly_df = sl.generate_omnichannel_amc_dataset()
+
+# Analyze per-spot AMC pre/post funnel response
+amc_audit = analyze_amc_spot_conversions(
+    conversions_df=amc_conv_df,
+    airings=airings_df,
+    before_minutes=60,
+    after_minutes=15,
+)
+
+print("Total DPV Lift:", amc_audit["total_dpv_lift"])
+print("Total AddToCart Lift:", amc_audit["total_atc_lift"])
+print("Total Order Lift:", amc_audit["total_order_lift"])
+print("AMC Funnel CR (Orders / DPV):", f"{amc_audit['cr_mean']:.2%}")
+```
+
+**Example AMC Clean-Room Channel Efficiency (`generate_omnichannel_amc_dataset`):**
+
+| Network | Spots | Net Spend | DPV Lift (`pageViewStarts`) | AddToCart Lift | Order Lift | AMC CPIV (DPV) | AMC Cost / Order |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Bravo** | 87 | \$176,917 | +4,420.8 | +728.5 | +236.0 | **\$40.02** | **\$749.65** |
+| **Hulu-CTV** | 66 | \$183,443 | +3,514.0 | +581.2 | +115.5 | **\$52.20** | \$1,588.25 |
+| **ESPN** | 86 | \$305,762 | +5,252.8 | +874.0 | +268.0 | **\$58.21** | \$1,140.90 |
+| **NBC** | 79 | \$434,614 | +6,303.0 | +1,045.8 | +272.5 | **\$68.95** | \$1,594.91 |
+| **CBS** | 82 | \$423,280 | +5,737.8 | +956.0 | +200.3 | **\$73.77** | \$2,113.76 |
+
+---
+
+### Architecture B: Hourly Marketplace Stream (`amc_hourly_marketplace.csv`)
+
+With **SpotLift Pro**, you can also pass continuous hourly Amazon telemetry (`amz_ordered_units`, `amz_ordered_gmv`, `amz_sponsored_brand_clicks`, `amz_sponsored_brand_spend`) alongside minute-level GA4 web telemetry into `analyze_omnichannel_pro()`:
+
+```python
+import spotlift as sl
+
+airings = sl.load_airings("tv_schedule.csv")
+web_telemetry = sl.load_telemetry("ga4_sessions.csv")
+amz_telemetry = sl.load_telemetry("amc_hourly_units.csv")
 
 # Run omnichannel attribution in SpotLift Pro
-report = spotlift.analyze_omnichannel_pro(
+report = sl.analyze_omnichannel_pro(
     airings=airings,
     web_telemetry=web_telemetry,
     amazon_telemetry=amz_telemetry,
-    window_minutes=6,
-    export_excel="omnichannel_audit_q4.xlsx"
+    window_minutes=8,
+    export_html="omnichannel_audit_q4.html",
+    export_excel="omnichannel_audit_q4.xlsx",
 )
 
 # Access omnichannel summaries
-print("Total Web Lift:", report["web_lift"])
-print("Amazon Units Halo:", report["amazon_halo_summary"]["incremental_units"])
-print("PPC Cannibalization Share:", report["cannibalization_summary"]["cannibalized_cost"])
+print("Total Web Lift:", report["spots_df"]["incremental_lift"].sum())
+print("Amazon Units Halo:", report["spots_df"]["amz_incremental_units"].sum())
+print("Amazon GMV Halo:", report["spots_df"]["amz_incremental_gmv"].sum())
 ```
 
 ---

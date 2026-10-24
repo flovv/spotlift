@@ -1,20 +1,24 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 PodPositionType = Literal["first", "second", "middle", "penultimate", "last"]
 
-ChannelSourceType = Literal[
+StandardChannelSourceType = Literal[
     "ga4_direct_organic_sessions",
     "ga4_sessions",
     "ga4_conversions",
+    "amz_page_views",
+    "amz_add_to_cart",
     "amz_ordered_units",
     "amz_ordered_gmv",
     "amz_brand_search_impressions",
     "amz_sponsored_brand_clicks",
     "amz_sponsored_brand_spend",
 ]
+
+ChannelSourceType = StandardChannelSourceType | str
 
 AttributionMethodType = Literal[
     "single_spot_diurnal_exact",
@@ -53,7 +57,11 @@ class TelemetryStreamSchema(BaseModel):
     timestamp: datetime = Field(..., description="Timezone-aware UTC bucket timestamp")
     channel_source: ChannelSourceType = Field(
         default="ga4_direct_organic_sessions",
-        description="Source identifier (e.g. ga4_direct_organic_sessions, ga4_sessions)",
+        min_length=1,
+        description=(
+            "Source identifier (e.g. ga4_direct_organic_sessions, ga4_conversions, "
+            "or custom GA4 event name such as key_event_survey_submitted)"
+        ),
     )
     value: float = Field(..., ge=0.0, description="Observed metric count or currency value")
     promo_active: bool = Field(
@@ -64,6 +72,19 @@ class TelemetryStreamSchema(BaseModel):
         default=None, ge=0.0, le=1.0,
         description="Optional competitor impression share on branded Amazon terms"
     )
+
+    @field_validator("competitor_sov", mode="before")
+    @classmethod
+    def validate_sov_nan(cls, v: Any) -> float | None:
+        import math
+        if v is None:
+            return None
+        try:
+            if math.isnan(float(v)):
+                return None
+        except (ValueError, TypeError):
+            pass
+        return v
 
     @field_validator("timestamp")
     @classmethod

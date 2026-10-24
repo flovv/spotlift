@@ -138,6 +138,8 @@ def load_telemetry(
         df["promo_active"] = False
     if "competitor_sov" not in df.columns:
         df["competitor_sov"] = None
+    else:
+        df["competitor_sov"] = df["competitor_sov"].apply(lambda v: None if pd.isna(v) else float(v))
 
     # Validate EVERY row against TelemetryStreamSchema
     records = df.to_dict(orient="records")

@@ -13,6 +13,7 @@ calendar-day boundaries (including midnight).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 import numpy as np
@@ -124,35 +125,15 @@ def estimate_conversion_rate_for_spot(
     return float(np.average(valid["cr"], weights=valid["sessions"]))
 
 
-def apply_conversion_model(
-    results: pd.DataFrame,
+def _compute_single_source_cr(
+    df: pd.DataFrame,
     telemetry: pd.DataFrame,
-    sessions_source: str = "ga4_direct_organic_sessions",
-    conversions_source: str = "ga4_conversions",
-    window_hours: int = 1,
-) -> pd.DataFrame:
-    """Annotate attribution results with CR and key_event_response.
-
-    Adds ``conversion_rate`` and ``key_event_response`` columns to the
-    results DataFrame. Spots with no valid lift or no CR data keep ``None``.
-
-    Args:
-        results: Attribution results DataFrame with ``timestamp`` and
-            ``incremental_lift`` columns.
-        telemetry: Full telemetry DataFrame containing both sessions and
-            conversions channel sources.
-        sessions_source: Channel-source label for session counts.
-        conversions_source: Channel-source label for conversion / key-event counts.
-        window_hours: Half-width of the hour neighborhood for CR estimation.
-
-    Returns:
-        Copy of ``results`` with ``conversion_rate`` and
-        ``key_event_response`` columns added.
-    """
-    df = results.copy()
-
+    sessions_source: str,
+    conv_source: str,
+    window_hours: int,
+) -> tuple[list[float | None], list[float | None]]:
     hourly_cr = compute_hourly_conversion_rates(
-        telemetry, sessions_source=sessions_source, conversions_source=conversions_source
+        telemetry, sessions_source=sessions_source, conversions_source=conv_source
     )
     if not hourly_cr.empty:
         hourly_cr = hourly_cr.copy()
@@ -177,6 +158,62 @@ def apply_conversion_model(
         else:
             key_event_responses.append(None)
 
-    df["conversion_rate"] = crs
-    df["key_event_response"] = key_event_responses
+    return crs, key_event_responses
+
+
+def apply_conversion_model(
+    results: pd.DataFrame,
+    telemetry: pd.DataFrame,
+    sessions_source: str = "ga4_direct_organic_sessions",
+    conversions_source: str | Sequence[str] = "ga4_conversions",
+    window_hours: int = 1,
+) -> pd.DataFrame:
+    """Annotate attribution results with CR and key_event_response.
+
+    Adds ``conversion_rate`` and ``key_event_response`` columns to the
+    results DataFrame. When ``conversions_source`` is a sequence of multiple
+    custom GA4 event names (e.g. ``["key_event_survey_submitted", "key_event_purchase"]``),
+    populates ``conversion_rate`` and ``key_event_response`` from the primary
+    (first) source and also appends ``cr_<source>`` and ``response_<source>``
+    columns for every custom event in the sequence.
+
+    Args:
+        results: Attribution results DataFrame with ``timestamp`` and
+            ``incremental_lift`` columns.
+        telemetry: Full telemetry DataFrame containing both sessions and
+            conversions channel sources.
+        sessions_source: Channel-source label for session counts.
+        conversions_source: Single channel-source label or sequence of custom
+            GA4 conversion / key-event labels.
+        window_hours: Half-width of the hour neighborhood for CR estimation.
+
+    Returns:
+        Copy of ``results`` with conversion rate and key-event response columns added.
+    """
+    df = results.copy()
+
+    if isinstance(conversions_source, str):
+        crs, responses = _compute_single_source_cr(
+            df, telemetry, sessions_source, conversions_source, window_hours
+        )
+        df["conversion_rate"] = crs
+        df["key_event_response"] = responses
+        return df
+
+    sources = list(conversions_source)
+    if not sources:
+        df["conversion_rate"] = None
+        df["key_event_response"] = None
+        return df
+
+    for idx, src in enumerate(sources):
+        crs, responses = _compute_single_source_cr(
+            df, telemetry, sessions_source, src, window_hours
+        )
+        if idx == 0:
+            df["conversion_rate"] = crs
+            df["key_event_response"] = responses
+        df[f"cr_{src}"] = crs
+        df[f"response_{src}"] = responses
+
     return df

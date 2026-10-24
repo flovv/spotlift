@@ -4,13 +4,14 @@
 ## Core Capabilities
 - **Open-Source Core:**
   - 21-day diurnal rolling median baseline de-trending with 15-minute pre-spot level calibration.
-  - Minute-level single-spot incremental lift integration for GA4 sessions and conversions.
+  - Minute-level single-spot incremental lift integration for GA4 sessions and custom GA4 sales / key events (single or multi-event `conversions_source`).
   - Automated overlapping spot collision detection across broadcast channels.
-  - Unbiased signed lift integration (`clip_negative=False`) preventing noise rectification bias.
+  - Unbiased signed lift integration (`clip_negative=False`) preventing noise rectification bias (validated on regional US state holdout controls).
+  - Built-in synthetic benchmark generators: `generate_dach_benchmark_dataset`, `generate_omnichannel_amc_dataset`, `generate_us_state_dataset`.
 - **SpotLift Pro (`spotlift.install_pro(api_key)`):**
   - Expectation-Maximization (EM) multi-spot deconvolution using Shifted-Gamma impulse response kernels.
-  - Dual-stage TV-to-Amazon Distributed Lag attribution (linking immediate search spikes to 1–36h delayed unit orders).
-  - Amazon Branded PPC Cannibalization Auditor (separating genuine TV organic halo from Sponsored Brands click interception) + AMC Clean Room SQL generator.
+  - Dual-architecture Amazon Marketing Cloud (AMC) attribution: (A) Per-spot pre/post clean room funnel (`pageViewStarts`, `addToCart`, `purchases`, `totalProductSales`) via `analyze_amc_spot_conversions`, and (B) 1–36h Dual-Stage Distributed Lag regression on hourly marketplace streams.
+  - Amazon & Paid Search Branded PPC Cannibalization Auditor (Two-Tier Branded Search Model) + GA4/AMC Clean Room SQL generators.
   - Automated Post-Buy Efficiency Matrix (Station, Daypart, Program Genre, Pod Position, Creative Wear-out) exported to interactive HTML and Excel.
 
 ## Quickstart

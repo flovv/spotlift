@@ -95,15 +95,58 @@ results = sl.analyze_spots(
 print(results[["spot_id", "incremental_lift", "conversion_rate", "key_event_response"]].head())
 ```
 
-### Custom Conversion Source Label
+### Custom GA4 Sales Events & Multi-Stage Funnel Attribution
 
-If your conversions use a different `channel_source` label:
+Enterprise GA4 implementations frequently define custom conversion / key events rather than relying exclusively on standard `purchase` (for example, `key_event_survey_submitted` for intake funnels or `key_event_subscription_purchase` for subscription checkouts).
+
+SpotLift's `TelemetryStreamSchema` and `load_telemetry()` natively accept any custom string in `channel_source`, and `conversions_source` accepts either a **single custom event name** (`str`) or a **sequence of multiple custom funnel events** (`Sequence[str]`):
+
+#### 1. Single Custom GA4 Sales Event
 
 ```python
 results = sl.analyze_spots(
     airings=airings,
     web_telemetry=telemetry,
-    conversions_source="ga4_purchases",  # custom label
+    conversions_source="key_event_subscription_purchase",
+)
+```
+
+#### 2. Multi-Stage Custom Funnel Events (`Sequence[str]`)
+
+When you pass a list of custom GA4 event names to `conversions_source` (in either `sl.analyze_spots()` or `sl.analyze_omnichannel_pro()`), SpotLift:
+1. Populates the primary `conversion_rate` and `key_event_response` columns using the first event in the list.
+2. Appends dedicated `cr_<event_name>` and `response_<event_name>` columns for every custom event in the sequence!
+
+```python
+# Step 1: Extract multiple custom GA4 events from BigQuery in a single pass
+sql = sl.generate_ga4_bigquery_sql(
+    project_id="my-gcp-project",
+    dataset_id="analytics_123456789",
+    start_date="2026-03-01",
+    end_date="2026-03-31",
+    conversion_event_name=["key_event_survey_submitted", "key_event_subscription_purchase"],
+)
+
+# Step 2: Attribute session lift across all custom funnel events simultaneously
+results = sl.analyze_spots(
+    airings=airings,
+    web_telemetry=telemetry,
+    conversions_source=["key_event_survey_submitted", "key_event_subscription_purchase"],
+)
+
+# Output includes:
+# - conversion_rate, key_event_response (primary event)
+# - cr_key_event_survey_submitted, response_key_event_survey_submitted
+# - cr_key_event_subscription_purchase, response_key_event_subscription_purchase
+print(
+    results[
+        [
+            "spot_id",
+            "incremental_lift",
+            "response_key_event_survey_submitted",
+            "response_key_event_subscription_purchase",
+        ]
+    ].head()
 )
 ```
 

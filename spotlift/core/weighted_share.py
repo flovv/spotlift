@@ -1,6 +1,6 @@
 """Weighted-share continuous-time attribution for collision clusters.
 
-Ports the Oviva R script's ``attrib_next6min_weighted`` function: instead of
+Implements continuous-time weighted-share attribution (`attrib_next6min_weighted`): instead of
 naive per-minute proportional splitting, this computes each spot's **weighted
 share of the response window** using a continuous-time integral where the
 cost/weight determines how much of the observed traffic each spot absorbs.
@@ -29,8 +29,7 @@ def compute_continuous_weighted_share(
 ) -> np.ndarray:
     """Computes exact continuous-time weighted share of the response window.
 
-    Direct analytical port of the R Oviva pipeline's ``attrib_next6min_weighted``:
-    models overlapping treatment windows as continuous step functions. For each
+    Models overlapping treatment windows as continuous step functions. For each
     spot k airing at time t_k with weight w_k over window [t_k, t_k + W],
     the total weight active at time tau is W(tau) = sum_{j active at tau} w_j.
     The analytical integral of w_k / W(tau) over [t_k, t_k + W] divided by W

@@ -6,6 +6,7 @@ and multi-hour delayed conversion halo across Amazon Marketing Cloud (AMC).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import sys
 
 import pandas as pd
@@ -49,7 +50,11 @@ from spotlift.core.weighted_share import (
     compute_continuous_weighted_share,
     integrate_weighted_share_cluster,
 )
-from spotlift.io.fixtures import generate_dach_benchmark_dataset
+from spotlift.io.fixtures import (
+    generate_dach_benchmark_dataset,
+    generate_omnichannel_amc_dataset,
+    generate_us_state_dataset,
+)
 from spotlift.io.loaders import load_airings, load_telemetry
 from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_bigquery_sql
 from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
@@ -66,7 +71,7 @@ def analyze_spots(
     baseline_days: int = 21,
     clip_negative: bool = False,
     apply_cr_model: bool = True,
-    conversions_source: str = "ga4_conversions",
+    conversions_source: str | Sequence[str] = "ga4_conversions",
     cr_window_hours: int = 1,
     baseline_fn: BaselineFn | None = None,
     collision_attribution: str = "weighted_share",
@@ -77,9 +82,10 @@ def analyze_spots(
     and prints the diagnostic summary report.
 
     When ``apply_cr_model`` is True (default) and a conversions channel (e.g.
-    ``ga4_conversions``) is present in ``web_telemetry``, also annotates each
-    attributed spot with ``conversion_rate`` and ``key_event_response`` (session
-    lift × hourly conversion rate).
+    ``ga4_conversions``, a custom GA4 key event name, or a list of multiple custom
+    sales events) is present in ``web_telemetry``, also annotates each attributed
+    spot with ``conversion_rate`` and ``key_event_response`` (plus ``cr_<event>``
+    and ``response_<event>`` when a sequence of custom events is provided).
 
     When ``baseline_fn`` is provided, uses it instead of the default diurnal
     baseline. Pass ``simple_mean_baseline`` for campaigns with <7 days of
@@ -96,7 +102,8 @@ def analyze_spots(
             prevent upward noise rectification bias). If True, clips lift at 0.0.
         apply_cr_model: If True (default), apply the hourly conversion-rate bridge when
             conversions data is present.
-        conversions_source: Channel-source label for conversion events (default: "ga4_conversions").
+        conversions_source: Channel-source label (or sequence of custom GA4 event names)
+            for conversion events (default: "ga4_conversions").
         cr_window_hours: Half-width of the hour neighborhood for CR estimation (default: 1).
         baseline_fn: Optional callable baseline model conforming to ``BaselineFn``.
             If None, uses ``compute_diurnal_baseline`` (default). Pass
@@ -134,7 +141,7 @@ def analyze_omnichannel_pro(
     white_label_config: dict | None = None,
     clip_negative: bool = False,
     apply_cr_model: bool = True,
-    conversions_source: str = "ga4_conversions",
+    conversions_source: str | Sequence[str] = "ga4_conversions",
     cr_window_hours: int = 1,
 ) -> dict:
     """Pro entry point (dispatches to compiled `spotlift_pro` binary).
@@ -156,7 +163,8 @@ def analyze_omnichannel_pro(
         clip_negative: If False (default), preserves signed lift (allowing negative lift to
             prevent upward noise rectification bias). If True, clips lift at 0.0.
         apply_cr_model: If True (default), apply conversion-rate bridge if conversions data present.
-        conversions_source: Channel-source label for conversion events (default: "ga4_conversions").
+        conversions_source: Channel-source label (or sequence of custom GA4 event names)
+            for conversion events (default: "ga4_conversions").
         cr_window_hours: Half-width of the hour neighborhood for CR estimation (default: 1).
 
     Returns:
@@ -204,6 +212,8 @@ __all__ = [
     "estimate_conversion_rate_for_spot",
     "generate_amc_telemetry_sql",
     "generate_dach_benchmark_dataset",
+    "generate_omnichannel_amc_dataset",
+    "generate_us_state_dataset",
     "generate_ga4_bigquery_sql",
     "install_pro",
     "integrate_isolated_spots_batch",

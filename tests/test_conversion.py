@@ -205,3 +205,68 @@ def test_estimate_conversion_rate_midnight_boundary():
     cr_2 = estimate_conversion_rate_for_spot(spot_2, hourly_df, window_hours=1)
     assert cr_2 is not None
     assert pytest.approx(cr_2, rel=1e-4) == 0.04
+
+
+
+def test_custom_ga4_sales_events_single_and_multi():
+    """Verify load_telemetry and apply_conversion_model work with custom GA4 event names (single and list)."""
+    import spotlift as sl
+
+    start = datetime(2026, 3, 15, 18, 0, tzinfo=timezone.utc)
+    rows = []
+    for h in range(3):
+        for m in range(60):
+            ts = start + timedelta(hours=h, minutes=m)
+            rows.append({"timestamp": ts, "channel_source": "ga4_direct_organic_sessions", "value": 100.0})
+            rows.append({"timestamp": ts, "channel_source": "key_event_survey_submitted", "value": 8.0})
+            rows.append({"timestamp": ts, "channel_source": "key_event_subscription_purchase", "value": 2.0})
+
+    raw_df = pd.DataFrame(rows)
+    # 1. Verify load_telemetry accepts custom GA4 channel_source names
+    loaded_telem = sl.load_telemetry(raw_df, tz="UTC")
+    assert "key_event_survey_submitted" in loaded_telem["channel_source"].unique()
+    assert "key_event_subscription_purchase" in loaded_telem["channel_source"].unique()
+
+    spot_ts = datetime(2026, 3, 15, 19, 15, tzinfo=timezone.utc)
+    results = pd.DataFrame([{
+        "spot_id": "S_CUSTOM",
+        "timestamp": spot_ts,
+        "incremental_lift": 200.0,
+    }])
+
+    # 2. Single custom GA4 event
+    single_res = apply_conversion_model(
+        results,
+        loaded_telem,
+        conversions_source="key_event_survey_submitted",
+    )
+    assert pytest.approx(single_res.iloc[0]["conversion_rate"], rel=1e-4) == 0.08
+    assert pytest.approx(single_res.iloc[0]["key_event_response"], rel=1e-4) == 16.0
+
+    # 3. Multiple custom GA4 funnel events simultaneously
+    multi_res = apply_conversion_model(
+        results,
+        loaded_telem,
+        conversions_source=["key_event_survey_submitted", "key_event_subscription_purchase"],
+    )
+    # Primary (first) event populates standard columns
+    assert pytest.approx(multi_res.iloc[0]["conversion_rate"], rel=1e-4) == 0.08
+    assert pytest.approx(multi_res.iloc[0]["key_event_response"], rel=1e-4) == 16.0
+    # Per-event columns populated for all custom events
+    assert pytest.approx(multi_res.iloc[0]["cr_key_event_survey_submitted"], rel=1e-4) == 0.08
+    assert pytest.approx(multi_res.iloc[0]["response_key_event_survey_submitted"], rel=1e-4) == 16.0
+    assert pytest.approx(multi_res.iloc[0]["cr_key_event_subscription_purchase"], rel=1e-4) == 0.02
+    assert pytest.approx(multi_res.iloc[0]["response_key_event_subscription_purchase"], rel=1e-4) == 4.0
+
+
+def test_generate_ga4_bigquery_sql_multi_custom_events():
+    """Verify BigQuery SQL template extracts multiple custom GA4 events with preserved event names."""
+    from spotlift.io.sql_templates import generate_ga4_bigquery_sql
+
+    sql = generate_ga4_bigquery_sql(
+        project_id="client-gcp",
+        dataset_id="analytics_999",
+        conversion_event_name=["key_event_survey_submitted", "key_event_subscription_purchase"],
+    )
+    assert "event_name IN ('key_event_survey_submitted', 'key_event_subscription_purchase')" in sql
+    assert "event_name AS channel_source" in sql

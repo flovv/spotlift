@@ -379,9 +379,10 @@ def analyze_spots_core(
 
     # Apply conversion-rate bridge: session lift → key_event_response
     if apply_cr_model:
+        conv_sources = [conversions_source] if isinstance(conversions_source, str) else list(conversions_source)
         has_conversions = (
             "channel_source" in web_telemetry.columns
-            and (web_telemetry["channel_source"] == conversions_source).any()
+            and web_telemetry["channel_source"].isin(conv_sources).any()
         )
         if has_conversions:
             result_df = apply_conversion_model(

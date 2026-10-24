@@ -212,7 +212,7 @@ def test_weighted_share_grp_weighting():
         assert s2_lift > s1_lift, f"S2 ({s2_lift}) should have more lift than S1 ({s1_lift})"
 
 
-# ─── Continuous step-function weighted share (Oviva R analytical port) ──────
+# ─── Continuous step-function weighted share ─────────────────────────────────
 
 
 def test_continuous_weighted_share_isolated():

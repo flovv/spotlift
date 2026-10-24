@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import os
 from typing import Any
 
@@ -33,7 +34,7 @@ def dispatch_omnichannel_pro(
     white_label_config: dict | None = None,
     clip_negative: bool = False,
     apply_cr_model: bool = True,
-    conversions_source: str = "ga4_conversions",
+    conversions_source: str | Sequence[str] = "ga4_conversions",
     cr_window_hours: int = 1,
     **kwargs: Any,
 ) -> dict[str, Any]:
