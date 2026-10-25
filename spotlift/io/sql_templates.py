@@ -10,6 +10,7 @@ def generate_ga4_bigquery_sql(
     end_date: str = "2026-03-21",
     include_conversions: bool = True,
     conversion_event_name: str | Sequence[str] = "purchase",
+    include_paid_search: bool = False,
 ) -> str:
     """Generates standard Google Analytics 4 (GA4) BigQuery extraction SQL.
 
@@ -29,6 +30,35 @@ def generate_ga4_bigquery_sql(
     """
     clean_start = start_date.replace("-", "")
     clean_end = end_date.replace("-", "")
+
+    paid_search_cte = ""
+    paid_search_union = ""
+    if include_paid_search:
+        paid_search_cte = f""",
+paid_search_branded AS (
+  SELECT
+    TIMESTAMP_TRUNC(TIMESTAMP_MICROS(event_timestamp), MINUTE, 'UTC') AS timestamp,
+    'paid_search_branded' AS channel_source,
+    CAST(COUNT(DISTINCT CONCAT(user_pseudo_id, CAST((SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'ga_session_id') AS STRING))) AS FLOAT64) AS value
+  FROM
+    `{project_id}.{dataset_id}.events_*`
+  WHERE
+    _TABLE_SUFFIX BETWEEN '{clean_start}' AND '{clean_end}'
+    AND event_name = 'session_start'
+    AND LOWER(COALESCE(traffic_source.medium, '')) IN ('cpc', 'ppc', 'paidsearch')
+  GROUP BY
+    1, 2
+)"""
+        paid_search_union = """
+UNION ALL
+SELECT
+  timestamp,
+  channel_source,
+  value,
+  FALSE AS promo_active,
+  CAST(NULL AS FLOAT64) AS competitor_sov
+FROM
+  paid_search_branded"""
 
     conversions_cte = ""
     conversions_union = ""
@@ -92,7 +122,7 @@ WITH raw_sessions AS (
     )) IN ('(none)', 'organic', 'direct', '(direct)')
   GROUP BY
     1, 2
-){conversions_cte}
+){conversions_cte}{paid_search_cte}
 
 SELECT
   timestamp,
@@ -102,7 +132,7 @@ SELECT
   CAST(NULL AS FLOAT64) AS competitor_sov
 FROM
   raw_sessions
-{conversions_union}
+{conversions_union}{paid_search_union}
 ORDER BY
   timestamp ASC, channel_source ASC;
 """

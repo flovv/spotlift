@@ -184,3 +184,60 @@ def test_integration_half_open_window_exact_bucket_count():
 
 
 
+
+
+def test_analyze_spots_region_col_partitioning():
+    from datetime import datetime, timezone
+
+    import pandas as pd
+    import pytest
+
+    from spotlift import analyze_spots
+
+    t0 = datetime(2026, 3, 15, 20, 0, tzinfo=timezone.utc)
+    airings = pd.DataFrame([
+        {"spot_id": "S_TX", "timestamp": t0, "channel": "WFAA-ABC", "creative_id": "C1", "cost": 1000.0, "grp": 2.0, "state": "TX"},
+        {"spot_id": "S_FL", "timestamp": t0, "channel": "WTVJ-NBC", "creative_id": "C2", "cost": 800.0, "grp": 1.5, "state": "FL"},
+    ])
+
+    # Telemetry for TX has +100 spike, FL has +50 spike
+    times = pd.date_range(t0, periods=10, freq="1min", tz="UTC")
+    tx_telem = pd.DataFrame({
+        "timestamp": times,
+        "channel_source": "ga4_direct_organic_sessions",
+        "value": [110.0] * 10,
+        "state": "TX",
+    })
+    fl_telem = pd.DataFrame({
+        "timestamp": times,
+        "channel_source": "ga4_direct_organic_sessions",
+        "value": [60.0] * 10,
+        "state": "FL",
+    })
+    web_telem = pd.concat([tx_telem, fl_telem], ignore_index=True)
+
+    # 1. Automatic regional partitioning
+    res = analyze_spots(airings, web_telem, window_minutes=8, region_col="state")
+    assert len(res) == 2
+    assert "state" in res.columns
+    assert set(res["state"].unique()) == {"TX", "FL"}
+
+    # TX spot should have observed volume ~ 8 * 110 = 880
+    tx_row = res[res["state"] == "TX"].iloc[0]
+    assert tx_row["observed_volume"] == pytest.approx(880.0)
+
+    # FL spot should have observed volume ~ 8 * 60 = 480
+    fl_row = res[res["state"] == "FL"].iloc[0]
+    assert fl_row["observed_volume"] == pytest.approx(480.0)
+
+    # 2. Validation error if region_col is missing in airings or web
+    with pytest.raises(ValueError, match="Region column 'missing_col' not found in airings"):
+        analyze_spots(airings, web_telem, region_col="missing_col")
+
+    airings_no_state = airings.drop(columns=["state"])
+    with pytest.raises(ValueError, match="Region column 'state' not found in airings"):
+        analyze_spots(airings_no_state, web_telem, region_col="state")
+
+    web_no_state = web_telem.drop(columns=["state"])
+    with pytest.raises(ValueError, match="Region column 'state' not found in web_telemetry"):
+        analyze_spots(airings, web_no_state, region_col="state")

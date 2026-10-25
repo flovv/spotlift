@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PodPositionType = Literal["first", "second", "middle", "penultimate", "last"]
 
@@ -32,6 +32,7 @@ AttributionMethodType = Literal[
 
 class AiringLogSchema(BaseModel):
     """Standardized broadcast TV airing log row (Schaltplan)."""
+    model_config = ConfigDict(extra="allow")
     spot_id: str = Field(..., min_length=1, description="Unique airing identifier")
     timestamp: datetime = Field(..., description="Timezone-aware UTC spot start timestamp")
     channel: str = Field(..., min_length=1, description="Station name e.g. ProSieben, RTL, Joyn")
@@ -54,6 +55,7 @@ class AiringLogSchema(BaseModel):
 
 class TelemetryStreamSchema(BaseModel):
     """High-frequency GA4 (1-minute) or Amazon (1-minute / 1-hour) observation row."""
+    model_config = ConfigDict(extra="allow")
     timestamp: datetime = Field(..., description="Timezone-aware UTC bucket timestamp")
     channel_source: ChannelSourceType = Field(
         default="ga4_direct_organic_sessions",

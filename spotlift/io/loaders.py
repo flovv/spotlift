@@ -83,6 +83,7 @@ def load_telemetry(
     allow_interpolation: bool = False,
     active_spot_windows: list[tuple[datetime, datetime]] | None = None,
     zero_fill_gaps: bool = False,
+    region_col: str | None = None,
 ) -> pd.DataFrame:
     """Loads, validates, and defensively aligns GA4 or Amazon telemetry against TelemetryStreamSchema.
 
@@ -149,9 +150,22 @@ def load_telemetry(
         except ValidationError as err:
             raise SchemaValidationError(f"Telemetry record {idx} invalid: {err}") from err
 
-    # Process per channel_source to ensure contiguity
+    # Detect grouping columns (channel_source + optional region)
+    group_cols = ["channel_source"]
+    effective_reg = region_col
+    if effective_reg is None:
+        for candidate in ("state", "country_or_region", "region", "market_dma"):
+            if candidate in df.columns:
+                effective_reg = candidate
+                break
+    if effective_reg is not None and effective_reg in df.columns:
+        group_cols.append(effective_reg)
+
+    # Process per stream/region to ensure contiguity
     processed_dfs = []
-    for source, group in df.groupby("channel_source"):
+    for keys, group in df.groupby(group_cols):
+        source = keys[0] if isinstance(keys, tuple) else keys
+        extra_cols = [c for c in group.columns if c not in ("timestamp", "channel_source", "value", "promo_active", "competitor_sov")]
         group = group.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
         
         min_ts = group["timestamp"].min()
@@ -180,6 +194,8 @@ def load_telemetry(
             reindexed = group.set_index("timestamp").reindex(full_index)
             reindexed["channel_source"] = source
             reindexed["promo_active"] = reindexed["promo_active"].fillna(False)
+            for c in extra_cols:
+                reindexed[c] = reindexed[c].ffill().bfill()
 
             # Check consecutive missing gaps
             is_na = reindexed["value"].isna()
@@ -234,6 +250,8 @@ def load_telemetry(
             reindexed = group.set_index("timestamp").reindex(full_index)
             reindexed["channel_source"] = source
             reindexed["promo_active"] = reindexed["promo_active"].fillna(False)
+            for c in extra_cols:
+                reindexed[c] = reindexed[c].ffill().bfill()
             reindexed["value"] = reindexed["value"].fillna(0.0)
             reindexed = reindexed.reset_index().rename(columns={"index": "timestamp"})
             processed_dfs.append(reindexed)

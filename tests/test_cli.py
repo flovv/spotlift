@@ -119,3 +119,29 @@ def test_cli_sql_invalid_source():
     assert result.exit_code != 0
 
 
+
+
+def test_cli_demo_amc_and_state(tmp_path: Path):
+    # Test AMC scenario
+    amc_dir = tmp_path / "demo_amc"
+    res_amc = runner.invoke(app, ["demo", "--out-dir", str(amc_dir), "--scenario", "amc", "--days", "2", "--spots", "8"])
+    assert res_amc.exit_code == 0
+    assert (amc_dir / "tv_schaltplan.csv").exists()
+    assert (amc_dir / "amc_spot_conversions.csv").exists()
+    assert (amc_dir / "amazon_hourly.csv").exists()
+    assert (amc_dir / "attributed_spots.csv").exists()
+
+    # Test US-State scenario
+    state_dir = tmp_path / "demo_state"
+    res_state = runner.invoke(app, ["demo", "--out-dir", str(state_dir), "--scenario", "us-state", "--days", "2", "--spots", "8"])
+    assert res_state.exit_code == 0
+    assert (state_dir / "us_state_airings.csv").exists()
+    assert (state_dir / "us_state_telemetry.parquet").exists()
+    assert (state_dir / "attributed_spots.csv").exists()
+
+
+def test_cli_sql_multi_events_and_paid_search():
+    res = runner.invoke(app, ["sql", "--source", "ga4", "--conversion-event", "purchase,key_event_survey", "--include-paid-search"])
+    assert res.exit_code == 0
+    assert "event_name IN ('purchase', 'key_event_survey')" in res.output
+    assert "paid_search_branded" in res.output

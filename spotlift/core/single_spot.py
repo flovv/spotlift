@@ -291,6 +291,7 @@ def analyze_spots_core(
     cr_window_hours: int = 1,
     baseline_fn: BaselineFn | None = None,
     collision_attribution: str = "weighted_share",
+    region_col: str | None = None,
 ) -> pd.DataFrame:
     """Core econometric engine: calculates trailing diurnal baselines and single-spot attribution.
 
@@ -311,6 +312,38 @@ def analyze_spots_core(
             fallback (``integrate_proportional_fallback``).
     """
     if airings.empty:
+        return pd.DataFrame()
+
+    if region_col is not None:
+        if region_col not in airings.columns:
+            raise ValueError(f"Region column '{region_col}' not found in airings DataFrame.")
+        if region_col not in web_telemetry.columns:
+            raise ValueError(f"Region column '{region_col}' not found in web_telemetry DataFrame.")
+
+        region_results = []
+        for reg_val, reg_airings in airings.groupby(region_col, sort=False):
+            reg_telem = web_telemetry[web_telemetry[region_col] == reg_val]
+            res = analyze_spots_core(
+                airings=reg_airings,
+                web_telemetry=reg_telem,
+                window_minutes=window_minutes,
+                pre_window_minutes=pre_window_minutes,
+                baseline_days=baseline_days,
+                clip_negative=clip_negative,
+                apply_cr_model=apply_cr_model,
+                conversions_source=conversions_source,
+                cr_window_hours=cr_window_hours,
+                baseline_fn=baseline_fn,
+                collision_attribution=collision_attribution,
+                region_col=None,
+            )
+            if not res.empty and region_col not in res.columns:
+                res[region_col] = reg_val
+            region_results.append(res)
+
+        if region_results:
+            combined = pd.concat(region_results, ignore_index=True)
+            return combined.sort_values("timestamp").reset_index(drop=True)
         return pd.DataFrame()
 
     # Detect collision clusters
@@ -425,5 +458,11 @@ def analyze_spots_core(
         mean_cpiv=mean_cpiv,
         n_insufficient=n_insufficient,
     )
+
+    # Preserve original metadata columns from airings if missing from result_df
+    for col in airings.columns:
+        if col not in result_df.columns:
+            mapping = dict(zip(airings["spot_id"], airings[col]))
+            result_df[col] = result_df["spot_id"].map(mapping)
 
     return result_df

@@ -36,6 +36,8 @@ def dispatch_omnichannel_pro(
     apply_cr_model: bool = True,
     conversions_source: str | Sequence[str] = "ga4_conversions",
     cr_window_hours: int = 1,
+    region_col: str | None = None,
+    amc_spot_conversions: pd.DataFrame | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Safely dispatches call to compiled `spotlift_pro` binary.
@@ -75,5 +77,7 @@ def dispatch_omnichannel_pro(
         apply_cr_model=apply_cr_model,
         conversions_source=conversions_source,
         cr_window_hours=cr_window_hours,
+        region_col=region_col,
+        amc_spot_conversions=amc_spot_conversions,
         **kwargs,
     )

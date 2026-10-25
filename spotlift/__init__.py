@@ -60,7 +60,7 @@ from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_b
 from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
 from spotlift.pro.installer import install_pro
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 
 
 def analyze_spots(
@@ -75,6 +75,7 @@ def analyze_spots(
     cr_window_hours: int = 1,
     baseline_fn: BaselineFn | None = None,
     collision_attribution: str = "weighted_share",
+    region_col: str | None = None,
 ) -> pd.DataFrame:
     """Open-source core entry point.
 
@@ -126,6 +127,7 @@ def analyze_spots(
         cr_window_hours=cr_window_hours,
         baseline_fn=baseline_fn,
         collision_attribution=collision_attribution,
+        region_col=region_col,
     )
 
 
@@ -143,6 +145,8 @@ def analyze_omnichannel_pro(
     apply_cr_model: bool = True,
     conversions_source: str | Sequence[str] = "ga4_conversions",
     cr_window_hours: int = 1,
+    region_col: str | None = None,
+    amc_spot_conversions: pd.DataFrame | None = None,
 ) -> dict:
     """Pro entry point (dispatches to compiled `spotlift_pro` binary).
 
@@ -185,6 +189,8 @@ def analyze_omnichannel_pro(
         apply_cr_model=apply_cr_model,
         conversions_source=conversions_source,
         cr_window_hours=cr_window_hours,
+        region_col=region_col,
+        amc_spot_conversions=amc_spot_conversions,
     )
 
 
