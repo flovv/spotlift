@@ -59,6 +59,45 @@ Running Open-Core Diagnostic Attribution Pass:
 
 ---
 
+## 🔍 Pre-Flight Data Quality Audit (Preventing the "Own Data Cliff")
+
+When transitioning from demo data to client broadcast schedules and GA4 exports, unrecorded minute gaps or timezone-naive timestamps (local station CET vs UTC GA4) cause silent attribution failures. 
+
+SpotLift includes a dedicated pre-flight validation suite to audit files before running attribution:
+
+```bash
+# Terminal Pre-Flight Checklist:
+spotlift validate --spots my_schaltplan.csv --web my_ga4_sessions.csv --tz Europe/Berlin
+
+# Machine-Readable JSON for AI Agents:
+spotlift validate --spots my_schaltplan.csv --web my_ga4_sessions.csv --tz Europe/Berlin --json
+```
+
+Or via Python SDK:
+```python
+import spotlift as sl
+
+preflight = sl.validate_inputs("my_schaltplan.csv", "my_ga4_sessions.csv", tz="Europe/Berlin")
+preflight.print_report()
+```
+
+---
+
+## 🎯 Real-World Use Cases & Solution Playbooks
+
+SpotLift includes four end-to-end decision playbooks tailored to specific marketing personas:
+
+| Persona | Decision Problem | Playbook | Key Deliverable |
+| :--- | :--- | :--- | :--- |
+| **Performance Media Agency** | *"Which TV stations delivered a €10 CPIV vs. €85 CPIV, and how should we reallocate next week's schedule?"* | [**Agency Post-Buy Audit**](https://flovv.github.io/spotlift/use-cases/agency-postbuy-audit) | Station & daypart efficiency scorecard, executive Markdown/Excel deliverables |
+| **DTC E-Commerce Growth** | *"Did TV drive profitable customer acquisitions or merely low-intent browsing sessions?"* | [**DTC Multi-Stage Funnel**](https://flovv.github.io/spotlift/use-cases/dtc-ecommerce-funnel) | Bridging session spikes to custom GA4 conversion events & spot-level CPA |
+| **Amazon-First Brand** | *"How much Amazon marketplace demand did our TV ads stimulate, and did our Sponsored Brands PPC intercept it?"* | [**Amazon Retail Halo & AMC**](https://flovv.github.io/spotlift/use-cases/amazon-retail-halo) | AMC pre/post clean room conversion funnel & 36h delayed retail lag model |
+| **Regional / Franchise Brand** | *"How do we measure local spot TV without diluting the signal across national baseline traffic?"* | [**Regional Spot TV & Holdouts**](https://flovv.github.io/spotlift/use-cases/regional-spot-tv-holdouts) | State/DMA segmentation with unexposed control state verification |
+
+👉 **Featured Walkthrough:** Read the [**Executive Decision Playbook: Reallocating a €500k TV Flight**](https://flovv.github.io/spotlift/use-cases/client-decision-playbook) for an end-to-end case study on station pruning and budget shifting.
+
+---
+
 ## Methodological Foundation & Econometric Transparency
 
 ### 1. Short-Term Direct Response vs. Total TV ROI
@@ -215,17 +254,20 @@ When two or more spots air within the 8-minute response window on different stat
 ## Command Line Interface (CLI)
 
 ```bash
-# 1. Generate Telemetry Extraction SQL for GA4 BigQuery or Amazon AMC
+# 1. Run instant synthetic demo flight (zero external credentials required)
+spotlift demo --scenario dach --out-dir ./demo_data
+
+# 2. Pre-flight validate your own campaign data before attribution
+spotlift validate --spots my_schaltplan.csv --web my_ga4_sessions.csv --tz Europe/Berlin
+
+# 3. Execute attribution and export both spot-level CSV & executive Markdown report
+spotlift run --spots my_schaltplan.csv --web my_ga4_sessions.csv --tz Europe/Berlin --format all --out results.csv
+
+# 4. Generate Telemetry Extraction SQL for GA4 BigQuery or Amazon AMC
 spotlift sql --source ga4 --project my-gcp-project --dataset analytics_12345 --out ./ga4_extract.sql
 spotlift sql --source amc --start 2026-03-01 --end 2026-03-21 --out ./amc_extract.sql
 
-# 2. Run instant synthetic demo flight
-spotlift demo --out-dir ./demo_data
-
-# 3. Execute attribution on your campaign flight
-spotlift run --spots schaltplan.csv --web ga4_minutes.parquet --out results.csv
-
-# 4. Authenticate Pro license key
+# 5. Authenticate Pro license key
 spotlift auth --key SL_PRO_xxxxxxxxxxxx
 ```
 
@@ -236,16 +278,16 @@ spotlift auth --key SL_PRO_xxxxxxxxxxxx
 ```python
 import spotlift as sl
 
-# 1. Load and validate airing logs and GA4 telemetry
+# 1. Pre-flight check & load validated airing logs and GA4 telemetry
+sl.validate_inputs("tv_schaltplan.csv", "ga4_minute_sessions.parquet", tz="Europe/Berlin").print_report()
 airings = sl.load_airings("tv_schaltplan.csv", tz="Europe/Berlin")
 ga4 = sl.load_telemetry("ga4_minute_sessions.parquet")
 
 # 2. Run open-source diurnal baseline & single-spot attribution
-#    apply_cr_model=True bridges session lift → key_event_response
-#    when a ga4_conversions channel is present in the telemetry
+#    'web_telemetry' and 'telemetry' are both accepted as keyword arguments
 results = sl.analyze_spots(
-    airings,
-    ga4,
+    airings=airings,
+    web_telemetry=ga4,
     window_minutes=8,
     clip_negative=False,
     apply_cr_model=True,              # bridge session lift → estimated conversions
@@ -260,6 +302,11 @@ station_summary = (
     .sort_values("cpiv")
 )
 print(station_summary)
+
+# 4. Export stakeholder Markdown post-buy audit summary
+summary_md = sl.generate_markdown_summary(results, airings_df=airings, web_df=ga4)
+with open("campaign_summary.md", "w", encoding="utf-8") as f:
+    f.write(summary_md)
 ```
 
 ---

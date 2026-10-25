@@ -74,6 +74,34 @@ Expected columns for `sl.load_telemetry()`:
 
 ---
 
+## Pre-Flight Data Quality Audit
+
+Always validate raw campaign files before launching attribution to prevent silent timezone offsets or unhandled minute gaps:
+
+```bash
+# Terminal Pre-Flight Checklist:
+spotlift validate --spots schaltplan.csv --web telemetry.parquet --tz Europe/Berlin
+
+# Machine-readable JSON output for automated agent reasoning:
+spotlift validate --spots schaltplan.csv --web telemetry.parquet --tz Europe/Berlin --json
+```
+
+Or in Python:
+```python
+import spotlift as sl
+
+preflight = sl.validate_inputs(
+    airings="schaltplan.csv",
+    web_telemetry="telemetry.parquet",
+    tz="Europe/Berlin",
+)
+if not preflight.is_ready:
+    print("Errors found:", [e.message for e in preflight.errors])
+preflight.print_report()
+```
+
+---
+
 ## Data Ingestion Recipes
 
 ### 1. Standard Airings Ingestion

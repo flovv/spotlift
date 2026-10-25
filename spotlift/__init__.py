@@ -44,6 +44,7 @@ from spotlift.core.linear_regression_baseline import (
     LinearRegressionBaseline,
     compute_linear_regression_baseline,
 )
+from spotlift.core.preflight import PreflightCheck, PreflightResult, validate_campaign_inputs
 from spotlift.core.single_spot import analyze_spots_core
 from spotlift.core.vectorized import integrate_isolated_spots_batch
 from spotlift.core.weighted_share import (
@@ -56,6 +57,7 @@ from spotlift.io.fixtures import (
     generate_us_state_dataset,
 )
 from spotlift.io.loaders import load_airings, load_telemetry
+from spotlift.io.markdown_report import generate_markdown_summary
 from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_bigquery_sql
 from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
 from spotlift.pro.installer import install_pro
@@ -65,7 +67,9 @@ __version__ = "0.3.0"
 
 def analyze_spots(
     airings: pd.DataFrame,
-    web_telemetry: pd.DataFrame,
+    web_telemetry: pd.DataFrame | None = None,
+    *,
+    telemetry: pd.DataFrame | None = None,
     window_minutes: int = 8,
     pre_window_minutes: int = 15,
     baseline_days: int = 21,
@@ -96,6 +100,8 @@ def analyze_spots(
     Args:
         airings: Validated TV/CTV airing log DataFrame (AiringLogSchema).
         web_telemetry: Validated GA4 minute-level session DataFrame (TelemetryStreamSchema).
+            ``telemetry`` is also accepted as a keyword argument alias.
+        telemetry: Keyword argument alias for ``web_telemetry``.
         window_minutes: Post-spot treatment response window W_post in minutes (default: 8).
         pre_window_minutes: Pre-spot calibration baseline anchor window W_pre (default: 15).
         baseline_days: Trailing history window in days for diurnal median estimation (default: 21).
@@ -115,9 +121,13 @@ def analyze_spots(
     Returns:
         pd.DataFrame containing spot-level attribution metrics.
     """
+    effective_telem = web_telemetry if web_telemetry is not None else telemetry
+    if effective_telem is None:
+        raise ValueError("web_telemetry (or telemetry) DataFrame must be provided.")
+
     return analyze_spots_core(
         airings=airings,
-        web_telemetry=web_telemetry,
+        web_telemetry=effective_telem,
         window_minutes=window_minutes,
         pre_window_minutes=pre_window_minutes,
         baseline_days=baseline_days,
@@ -133,7 +143,9 @@ def analyze_spots(
 
 def analyze_omnichannel_pro(
     airings: pd.DataFrame,
-    web_telemetry: pd.DataFrame,
+    web_telemetry: pd.DataFrame | None = None,
+    *,
+    telemetry: pd.DataFrame | None = None,
     amazon_telemetry: pd.DataFrame | None = None,
     api_key: str | None = None,
     window_minutes: int = 8,
@@ -175,9 +187,13 @@ def analyze_omnichannel_pro(
         dict containing 'spots_df', 'creative_wearout', 'efficiency_matrices',
         'amazon_halo_summary', 'cannibalization_summary', and file export paths.
     """
+    effective_telem = web_telemetry if web_telemetry is not None else telemetry
+    if effective_telem is None:
+        raise ValueError("web_telemetry (or telemetry) DataFrame must be provided.")
+
     return dispatch_omnichannel_pro(
         airings=airings,
-        web_telemetry=web_telemetry,
+        web_telemetry=effective_telem,
         amazon_telemetry=amazon_telemetry,
         api_key=api_key,
         window_minutes=window_minutes,
@@ -194,12 +210,18 @@ def analyze_omnichannel_pro(
     )
 
 
+validate_inputs = validate_campaign_inputs
+preflight = validate_campaign_inputs
+
+
 __all__ = [
     "HAS_PRO",
     "AiringLogSchema",
     "BaselineFn",
     "LinearRegressionBaseline",
     "MissingTelemetryGapWarning",
+    "PreflightCheck",
+    "PreflightResult",
     "ProFeatureNotInstalledError",
     "ProLicenseError",
     "SchemaValidationError",
@@ -219,6 +241,7 @@ __all__ = [
     "generate_amc_telemetry_sql",
     "generate_dach_benchmark_dataset",
     "generate_ga4_bigquery_sql",
+    "generate_markdown_summary",
     "generate_omnichannel_amc_dataset",
     "generate_us_state_dataset",
     "install_pro",
@@ -227,5 +250,8 @@ __all__ = [
     "is_pro_available",
     "load_airings",
     "load_telemetry",
+    "preflight",
     "simple_mean_baseline",
+    "validate_campaign_inputs",
+    "validate_inputs",
 ]

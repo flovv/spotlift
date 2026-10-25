@@ -145,3 +145,36 @@ def test_cli_sql_multi_events_and_paid_search():
     assert res.exit_code == 0
     assert "event_name IN ('purchase', 'key_event_survey')" in res.output
     assert "paid_search_branded" in res.output
+
+
+def test_cli_validate_and_markdown_summary(tmp_path: Path):
+    out_dir = tmp_path / "val_demo"
+    runner.invoke(app, ["demo", "--out-dir", str(out_dir), "--days", "2", "--spots", "8"])
+
+    spots_path = out_dir / "tv_schaltplan.csv"
+    web_path = out_dir / "ga4_minutes.parquet"
+
+    # Test validate human report
+    res_val = runner.invoke(app, ["validate", "--spots", str(spots_path), "--web", str(web_path)])
+    assert res_val.exit_code == 0
+    assert "SPOTLIFT PRE-FLIGHT AUDIT: READY FOR ATTRIBUTION" in res_val.output
+
+    # Test validate JSON report
+    res_json = runner.invoke(app, ["validate", "--spots", str(spots_path), "--web", str(web_path), "--json"])
+    assert res_json.exit_code == 0
+    import json
+    data = json.loads(res_json.output)
+    assert data["is_ready"] is True
+    assert "airings_count" in data["stats"]
+
+    # Test run with --format all and markdown summary output
+    res_csv = out_dir / "run_results.csv"
+    res_run = runner.invoke(app, ["run", "--spots", str(spots_path), "--web", str(web_path), "--format", "all", "--out", str(res_csv)])
+    assert res_run.exit_code == 0
+    assert res_csv.exists()
+    assert (out_dir / "run_results.md").exists()
+    assert "Station Performance Summary" in res_run.output
+    md_text = (out_dir / "run_results.md").read_text(encoding="utf-8")
+    assert "SpotLift Post-Buy Attribution Summary" in md_text
+    assert "Station & Channel Performance Ranking" in md_text
+

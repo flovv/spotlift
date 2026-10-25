@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -179,6 +180,57 @@ def demo(
 
 
 @app.command()
+def validate(
+    spots: Path = typer.Option(..., "--spots", "-s", help="Path to broadcast airings CSV/Parquet (Schaltplan)."),
+    web: Path = typer.Option(..., "--web", "-w", help="Path to GA4 minute-level session CSV/Parquet."),
+    tz: str = typer.Option(
+        "UTC",
+        "--tz",
+        "-z",
+        help="Timezone assumed if input timestamps are naive (e.g. Europe/Berlin, UTC, US/Eastern).",
+    ),
+    window: int = typer.Option(8, "--window", help="Post-spot response window in minutes."),
+    conversions_source: str = typer.Option(
+        "ga4_conversions",
+        "--conversions-source",
+        "-c",
+        help="Conversion channel source label(s), comma-separated.",
+    ),
+    region_col: str | None = typer.Option(
+        None,
+        "--region-col",
+        "-r",
+        help="Optional column name to segment attribution by region/state (e.g. 'state').",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON summary for AI coding agents and pipelines.",
+    ),
+) -> None:
+    """Performs pre-flight data quality, schema, cadence, and collision validation on campaign files."""
+    conv_parts = [s.strip() for s in conversions_source.split(",") if s.strip()]
+    conv_source_param: str | list[str] = conv_parts if len(conv_parts) > 1 else (conv_parts[0] if conv_parts else "ga4_conversions")
+
+    result = sl.validate_inputs(
+        airings=spots,
+        web_telemetry=web,
+        tz=tz,
+        window_minutes=window,
+        conversions_source=conv_source_param,
+        region_col=region_col,
+    )
+
+    if json_output:
+        print(json.dumps(result.summary_dict(), indent=2, default=str))
+    else:
+        result.print_report()
+
+    if not result.is_ready:
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def run(
     spots: Path = typer.Option(..., "--spots", "-s", help="Path to broadcast airings CSV/Parquet (Schaltplan)."),
     web: Path = typer.Option(..., "--web", "-w", help="Path to GA4 minute-level session CSV/Parquet."),
@@ -198,8 +250,20 @@ def run(
         help="Optional column name to segment attribution by region/state (e.g. 'state').",
     ),
     out: Path | None = typer.Option(None, "--out", "-o", help="Path to save spot-level attribution CSV."),
-    html: Path | None = typer.Option(None, "--html", help="Path to export client interactive HTML report."),
-    excel: Path | None = typer.Option(None, "--excel", help="Path to export multi-tab Excel post-buy deck."),
+    markdown_out: Path | None = typer.Option(
+        None,
+        "--markdown-out",
+        "-m",
+        help="Path to export executive Markdown post-buy audit summary report.",
+    ),
+    format: str = typer.Option(
+        "csv",
+        "--format",
+        "-f",
+        help="Deliverable format: 'csv', 'markdown', or 'all'.",
+    ),
+    html: Path | None = typer.Option(None, "--html", help="Path to export client interactive HTML report (SpotLift Pro)."),
+    excel: Path | None = typer.Option(None, "--excel", help="Path to export multi-tab Excel post-buy deck (SpotLift Pro)."),
     api_key: str | None = typer.Option(None, "--key", "-k", help="SpotLift Pro license key."),
     clip_negative: bool = typer.Option(
         False,
@@ -268,9 +332,51 @@ def run(
             region_col=region_col,
         )
 
-    if out:
-        res_df.to_csv(out, index=False)
-        console.print(f"[green]✔ Saved attribution records to:[/] {out}")
+    # Export CSV
+    fmt_clean = format.lower().strip()
+    should_save_csv = (fmt_clean in ("csv", "all")) or (out is not None)
+    should_save_md = (fmt_clean in ("markdown", "all")) or (markdown_out is not None)
+
+    if should_save_csv:
+        target_csv = out or Path("spotlift_attribution_records.csv")
+        target_csv.parent.mkdir(parents=True, exist_ok=True)
+        res_df.to_csv(target_csv, index=False)
+        console.print(f"[green]✔ Saved attribution CSV to:[/] {target_csv}")
+
+    # Export Markdown Summary Report
+    if should_save_md:
+        target_md = markdown_out or (out.with_suffix(".md") if out else Path("spotlift_campaign_summary.md"))
+        target_md.parent.mkdir(parents=True, exist_ok=True)
+        md_content = sl.generate_markdown_summary(res_df, airings_df=airings_df, web_df=web_df)
+        target_md.write_text(md_content, encoding="utf-8")
+        console.print(f"[green]✔ Saved executive Markdown report to:[/] {target_md}")
+
+    # Print summary channel performance table
+    console.print("\n[bold]Station Performance Summary:[/bold]")
+    summary_table = Table(title="Attributed Channel Efficiency (Open-Core)")
+    summary_table.add_column("Channel", style="cyan", no_wrap=True)
+    summary_table.add_column("Spots", justify="right")
+    summary_table.add_column("Spend", justify="right")
+    summary_table.add_column("Net Lift", justify="right", style="bold green")
+    summary_table.add_column("CPIV", justify="right")
+    summary_table.add_column("Collision Rate", justify="right")
+
+    for ch, grp in res_df.groupby("channel"):
+        ch_spend = float(grp["cost"].sum())
+        ch_lift = float(grp["incremental_lift"].sum())
+        ch_cpiv = (ch_spend / ch_lift) if ch_lift > 0 else None
+        ch_coll = float(grp["is_overlapping"].mean() * 100.0) if "is_overlapping" in grp.columns else 0.0
+
+        lift_style = "bold green" if ch_lift > 0 else ("bold red" if ch_lift < 0 else "dim")
+        summary_table.add_row(
+            str(ch),
+            f"{len(grp):,}",
+            f"{ch_spend:,.0f}",
+            f"[{lift_style}]{ch_lift:+,.1f}[/{lift_style}]",
+            f"{ch_cpiv:.2f}" if ch_cpiv is not None else "-",
+            f"{ch_coll:.1f}%",
+        )
+    console.print(summary_table)
 
 
 @app.command()

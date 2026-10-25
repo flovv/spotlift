@@ -10,6 +10,9 @@ hero:
       text: Get Started (5 Min)
       link: /quickstart
     - theme: alt
+      text: Real-World Use Cases
+      link: /use-cases/
+    - theme: alt
       text: Econometric Methodology
       link: /methodology
     - theme: alt
@@ -46,15 +49,16 @@ Legacy TV attribution SaaS platforms charge **€3,000–€6,000/month** on mul
 ```python
 import spotlift
 
-# 1. Load broadcast schedule (Schaltplan) and GA4 minute telemetry
-airings = spotlift.load_airings("campaign_airings.csv")
+# 1. Pre-flight check & load inputs (timezone-normalized)
+spotlift.validate_inputs("campaign_airings.csv", "ga4_minute_sessions.csv", tz="Europe/Berlin").print_report()
+airings = spotlift.load_airings("campaign_airings.csv", tz="Europe/Berlin")
 telemetry = spotlift.load_telemetry("ga4_minute_sessions.csv")
 
 # 2. Run high-frequency attribution with analytical weighted-share
 results = spotlift.analyze_spots(
     airings=airings,
-    telemetry=telemetry,
-    window_minutes=6,
+    web_telemetry=telemetry,
+    window_minutes=8,
     collision_attribution="weighted_share"
 )
 

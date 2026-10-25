@@ -32,6 +32,7 @@ export default defineConfig({
     },
     nav: [
       { text: 'Quickstart', link: '/quickstart' },
+      { text: 'Use Cases', link: '/use-cases/' },
       { text: 'Methodology', link: '/methodology' },
       { text: 'Integrations', items: [
         { text: 'GA4 & BigQuery SQL', link: '/ga4-bigquery' },
@@ -51,6 +52,17 @@ export default defineConfig({
           { text: 'Overview & Philosophy', link: '/index' },
           { text: '5-Minute Quickstart', link: '/quickstart' },
           { text: 'CLI Commands & Demo', link: '/cli' },
+        ]
+      },
+      {
+        text: 'Real-World Use Cases',
+        items: [
+          { text: 'Solutions Overview', link: '/use-cases/' },
+          { text: 'Executive Decision Playbook', link: '/use-cases/client-decision-playbook' },
+          { text: 'Performance Agency Post-Buy Audit', link: '/use-cases/agency-postbuy-audit' },
+          { text: 'DTC E-Commerce Multi-Stage Funnel', link: '/use-cases/dtc-ecommerce-funnel' },
+          { text: 'Amazon Retail Halo & Clean Room', link: '/use-cases/amazon-retail-halo' },
+          { text: 'Regional Spot TV & Geo-Holdouts', link: '/use-cases/regional-spot-tv-holdouts' },
         ]
       },
       {
