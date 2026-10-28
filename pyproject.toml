@@ -4,12 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spotlift"
-version = "0.3.0"
-description = "Econometric High-Frequency Linear TV Attribution Engine across GA4 and Amazon AMC"
+version = "0.3.1"
+description = "High-frequency causal Linear TV attribution engine — measure TV ad lift on GA4 and Amazon AMC"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "SpotLift Core Team" }
+    { name = "flovv", email = "flovv@users.noreply.github.com" }
+]
+maintainers = [
+    { name = "flovv", email = "flovv@users.noreply.github.com" }
 ]
 requires-python = ">=3.10"
 keywords = [
@@ -17,22 +20,31 @@ keywords = [
     "linear-tv",
     "ga4",
     "amazon-marketing-cloud",
+    "amc",
     "econometrics",
     "post-buy-analysis",
     "shifted-gamma",
-    "media-mix-modeling"
+    "media-mix-modeling",
+    "causal-inference",
+    "broadcast",
+    "ad-attribution",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Other Audience",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Framework :: Pydantic",
     "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Office/Business",
 ]
 
 dependencies = [
@@ -62,6 +74,8 @@ Homepage = "https://github.com/flovv/spotlift"
 Documentation = "https://flovv.github.io/spotlift/"
 Repository = "https://github.com/flovv/spotlift"
 Changelog = "https://github.com/flovv/spotlift/releases"
+"Bug Tracker" = "https://github.com/flovv/spotlift/issues"
+"Pro License" = "https://buy.polar.sh/polar_cl_eHd0shvN1nvDYVV59IkhvvPDNw4Rxmu77INZ023fbF4"
 
 [tool.hatch.build.targets.wheel]
 packages = ["spotlift"]

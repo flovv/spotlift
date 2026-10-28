@@ -1,13 +1,17 @@
 # SpotLift
 
 [![CI](https://github.com/flovv/spotlift/actions/workflows/ci_tests.yml/badge.svg)](https://github.com/flovv/spotlift/actions/workflows/ci_tests.yml)
-[![Python versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://github.com/flovv/spotlift)
+[![PyPI](https://img.shields.io/pypi/v/spotlift.svg)](https://pypi.org/project/spotlift/)
+[![Python versions](https://img.shields.io/pypi/pyversions/spotlift.svg)](https://pypi.org/project/spotlift/)
+[![Downloads](https://img.shields.io/pypi/dm/spotlift.svg)](https://pypi.org/project/spotlift/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://flovv.github.io/spotlift/)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skill-tv--to--web--measurement-purple)](https://skills.sh/flovv/spotlift/tv-to-web-measurement)
 [![skills.sh](https://img.shields.io/badge/skills.sh-tv--to--web--measurement-black)](https://skills.sh/flovv/spotlift/tv-to-web-measurement)
 
-**Turn TV airing logs and web traffic into a reproducible campaign response analysis.**
+**Measure the causal lift of Linear TV advertising on web traffic (GA4) and Amazon sales (AMC) — without sending raw data to a third-party SaaS.**
+
+SpotLift runs locally in your Python environment: feed it a TV airing log and minute-level web telemetry, and it computes per-spot incremental visitor lift, cost-per-incremental-visit (CPIV), conversion-rate-bridged key events, and prime-time collision deconvolution. No pixels, no SaaS contracts, no data leakage.
 
 SpotLift is a agent-ready econometric engine engineered to measure the immediate visitor response of **Linear TV** broadcast airings against minute-level **Google Analytics 4 (GA4)** web traffic and **Amazon Marketing Cloud (AMC)** sales metrics.
 
