@@ -92,6 +92,10 @@ class PreflightResult:
                 print(f"         Remediation: {check.remediation}")
             print()
 
+        if not self.is_ready:
+            print("💡 Need help mapping non-standard agency schemas or resolving data gaps?")
+            print("   Open an issue or ask for schema support: https://github.com/flovv/spotlift/issues/new\n")
+
         print(f"{banner_char * 80}\n")
 
 

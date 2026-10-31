@@ -175,7 +175,8 @@ def generate_markdown_summary(
         "3. **Amazon Retail Halo:** If your products sell on Amazon, website sessions capture only 40–60% of total response. Use SpotLift Pro or the AMC SQL Clean Room templates to capture delayed retail conversion halo and audit Sponsored Brands PPC cannibalization.",
         "",
         "---",
-        "*Report compiled locally via SpotLift. Zero customer PII or raw telemetry was transmitted to external servers.*",
+        "*Report compiled locally via SpotLift. Zero customer PII or raw telemetry was transmitted to external servers.*  ",
+        "*Have feedback or need assistance mapping your agency's data? Share with the team at https://github.com/flovv/spotlift/issues*",
     ])
 
     return "\n".join(lines)

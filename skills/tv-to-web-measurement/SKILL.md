@@ -256,3 +256,12 @@ When presenting results to stakeholders, follow this comparative structure:
 3. **Creative Wear-Out ($N_{50}$):** Report whether any creatives have a `status == "FATIGUED"` with a half-life $N_{50}$ indicating response saturation.
 4. **Daypart / Station & Omnichannel Efficiency:** Reference Pro efficiency matrices showing optimal dayparts and compare Web CPIV vs. Amazon AMC Cost Per Incremental Detail Page View (`cp_dpv`) and ROAS.
 5. **Deliverables:** Provide clickable links to the generated standalone HTML and Excel reports.
+
+---
+
+## Troubleshooting & Schema Support
+
+If client data uses non-standard agency column names or unexpected minute telemetry intervals:
+- Run pre-flight check: `spotlift validate --spots airings.csv --web telemetry.parquet --tz <timezone>`
+- Open an issue or request schema mapping support: https://github.com/flovv/spotlift/issues/new
+- Official documentation & playbooks: https://flovv.github.io/spotlift/

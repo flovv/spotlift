@@ -85,6 +85,10 @@ preflight = sl.validate_inputs("my_schaltplan.csv", "my_ga4_sessions.csv", tz="E
 preflight.print_report()
 ```
 
+> [!TIP]
+> **Using your own campaign data? Did something block you?**  
+> If your media agency uses a non-standard column schema (e.g. `Sendetermin`, `Sender`, `Netto`, `Visits`) or you encounter unexpected minute intervals, [open a GitHub issue or request schema support](https://github.com/flovv/spotlift/issues/new). We actively assist teams getting started with their own data.
+
 ---
 
 ## 🎯 Real-World Use Cases & Solution Playbooks
@@ -366,3 +370,12 @@ cp skills/tv-to-web-measurement/SKILL.md .agent/skills/tv-to-web-measurement/
 - **Documentation Source:** [`docs/`](docs/)
 - **LLM Summary Index:** [`docs/public/llms.txt`](docs/public/llms.txt)
 - **Full Technical Reference:** [`docs/public/llms-full.txt`](docs/public/llms-full.txt)
+
+---
+
+## 💬 Community, Feedback & Support
+
+Did you run SpotLift on your own campaign data? Did something block you?
+- **Non-standard broadcast format?** Open an issue with an anonymized row snippet and we will help map your agency's export schema: [GitHub Issues & Support](https://github.com/flovv/spotlift/issues/new)
+- **Discussion & Questions:** Ask questions about baseline detrending, Amazon clean rooms, or GA4 BigQuery SQL in [Discussions](https://github.com/flovv/spotlift/discussions).
+

@@ -176,7 +176,8 @@ def demo(
 
     console.print(table)
     console.print(f"\n[bold]Next step:[/] Inspect full results at [underline]{attributed_path}[/underline] or run with your own files:")
-    console.print("  [cyan]spotlift run --spots your_schaltplan.csv --web your_ga4_minutes.parquet --out results.csv[/cyan]\n")
+    console.print("  [cyan]spotlift run --spots your_schaltplan.csv --web your_ga4_minutes.parquet --out results.csv[/cyan]")
+    console.print("\n[dim]💬 Tested your own campaign data? Share feedback or report an obstacle: https://github.com/flovv/spotlift/issues[/dim]\n")
 
 
 @app.command()
@@ -225,6 +226,8 @@ def validate(
         print(json.dumps(result.summary_dict(), indent=2, default=str))
     else:
         result.print_report()
+        if result.is_ready:
+            console.print("[dim]💬 Tested your own campaign data? Share feedback or feature requests: https://github.com/flovv/spotlift/issues[/dim]\n")
 
     if not result.is_ready:
         raise typer.Exit(code=1)
@@ -377,6 +380,7 @@ def run(
             f"{ch_coll:.1f}%",
         )
     console.print(summary_table)
+    console.print("\n[dim]💬 Did this analysis work for your campaign? Share feedback or report an obstacle: https://github.com/flovv/spotlift/issues[/dim]\n")
 
 
 @app.command()
