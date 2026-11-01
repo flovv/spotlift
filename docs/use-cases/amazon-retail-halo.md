@@ -85,3 +85,18 @@ print(f"PPC Interception Rate: {cannibalization['interception_rate']:.1%}")
 **Actionable Strategic Guidance:**
 - If your brand holds the #1 organic search rank with no aggressive competitor conquesting (`competitor_sov < 15%`), reduce exact-match brand PPC bids during heavy broadcast flights.
 - Reallocate the saved PPC budget directly into higher-performing broadcast dayparts or generic category keywords to grow top-of-funnel customer reach.
+
+---
+
+### Stage 4: Constrained Portfolio Budget Reallocation
+Once Amazon response and PPC savings are quantified, run SpotLift's budget optimizer to reallocate spend based on marginal response curves:
+
+```bash
+spotlift optimize \
+  --spots ./reports/attributed_spots.csv \
+  --budget 350000 \
+  --max-shift 0.35 \
+  --scenarios
+```
+
+👉 See the complete board-ready walkthrough in the **[Executive Decision Playbook](/use-cases/client-decision-playbook)**.

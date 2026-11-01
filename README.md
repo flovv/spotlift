@@ -99,10 +99,50 @@ SpotLift includes four end-to-end decision playbooks tailored to specific market
 | :--- | :--- | :--- | :--- |
 | **Performance Media Agency** | *"Which TV stations delivered a €10 CPIV vs. €85 CPIV, and how should we reallocate next week's schedule?"* | [**Agency Post-Buy Audit**](https://flovv.github.io/spotlift/use-cases/agency-postbuy-audit) | Station & daypart efficiency scorecard, executive Markdown/Excel deliverables |
 | **DTC E-Commerce Growth** | *"Did TV drive profitable customer acquisitions or merely low-intent browsing sessions?"* | [**DTC Multi-Stage Funnel**](https://flovv.github.io/spotlift/use-cases/dtc-ecommerce-funnel) | Bridging session spikes to custom GA4 conversion events & spot-level CPA |
-| **Amazon-First Brand** | *"How much Amazon marketplace demand did our TV ads stimulate, and did our Sponsored Brands PPC intercept it?"* | [**Amazon Retail Halo & AMC**](https://flovv.github.io/spotlift/use-cases/amazon-retail-halo) | AMC pre/post clean room conversion funnel & 36h delayed retail lag model |
+| **Amazon-First Brand** | *"How much Amazon marketplace demand did our TV ads stimulate, and did our Sponsored Brands PPC intercept it?"* | [**Amazon Retail Halo & AMC**](https://flovv.github.io/spotlift/use-cases/amazon-retail-halo) | AMC pre/post clean room conversion funnel, PPC cannibalization audit & 36h delayed retail lag model |
 | **Regional / Franchise Brand** | *"How do we measure local spot TV without diluting the signal across national baseline traffic?"* | [**Regional Spot TV & Holdouts**](https://flovv.github.io/spotlift/use-cases/regional-spot-tv-holdouts) | State/DMA segmentation with unexposed control state verification |
 
-👉 **Featured Walkthrough:** Read the [**Executive Decision Playbook: Reallocating a €500k TV Flight**](https://flovv.github.io/spotlift/use-cases/client-decision-playbook) for an end-to-end case study on station pruning and budget shifting.
+👉 **Featured Master Case Study:** Read the [**Executive Decision Playbook: Reallocating a €500k TV Flight**](https://flovv.github.io/spotlift/use-cases/client-decision-playbook) for an end-to-end case study on uncovering €18,500 in Amazon PPC cannibalization, capturing 43% missing marketplace demand, and running constrained portfolio reallocation.
+
+---
+
+## ⚖️ Constrained Budget Optimization (`spotlift optimize`)
+
+Moving money simply to the "lowest average CPIV" channel is a recipe for disaster: niche channels saturate rapidly, audience wear-out explodes marginal costs, and contractual agency volume commitments with broadcaster groups get broken.
+
+SpotLift includes a built-in **Constrained Portfolio Optimizer** that models diminishing marginal returns ($R(s) = \alpha s^\beta$) and equalizes Marginal CPIV ($m\text{CPIV}$) under boundary constraints:
+
+```bash
+# Terminal Optimization on Attributed Campaign File:
+spotlift optimize \
+  --spots ./attributed_spots.csv \
+  --budget 500000 \
+  --max-shift 0.35 \
+  --scenarios \
+  --out ./optimized_budget.csv
+```
+
+Or via Python SDK:
+```python
+import spotlift as sl
+
+# Run constrained portfolio optimization with agency group share minimums
+results = sl.optimize_budget(
+    df=attributed_spots,
+    total_budget=500000.0,
+    max_shift=0.35,              # Maximum ±35% reallocation
+    elasticity=0.70,             # Diminishing returns power-law beta
+    group_constraints={
+        "Ad Alliance": {
+            "channels": ["RTL", "VOX"],
+            "min_share": 0.45,   # Maintain 45% minimum contract commitment
+        }
+    },
+)
+
+# Print executive comparison table with marginal CPIVs
+results.print_summary()
+```
 
 ---
 

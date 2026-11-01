@@ -70,6 +70,7 @@ export default defineConfig({
         items: [
           { text: 'Core Econometrics & Baseline', link: '/methodology' },
           { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
+          { text: 'Budget Portfolio Optimizer', link: '/optimizer' },
           { text: 'vs. Legacy Providers & SaaS', link: '/vs-tvsquared' },
         ]
       },

@@ -437,5 +437,78 @@ def sql(
         print(query)
 
 
+
+
+@app.command()
+def optimize(
+    spots: Path = typer.Option(..., "--spots", "-s", help="Path to attributed spots CSV/Parquet (or airings file if --web is provided)."),
+    web: Path | None = typer.Option(None, "--web", "-w", help="Optional GA4 telemetry path if spots file is not yet attributed."),
+    budget: float | None = typer.Option(None, "--budget", "-b", help="Target total budget. Defaults to current flight spend."),
+    max_shift: float = typer.Option(0.35, "--max-shift", "-m", help="Maximum relative budget reallocation allowed per channel (e.g. 0.35 = ±35%)."),
+    elasticity: float = typer.Option(0.70, "--elasticity", "-e", help="Diminishing returns elasticity parameter beta (0 < beta < 1)."),
+    channel_col: str = typer.Option("channel", "--channel-col", help="Column name identifying media channel/station."),
+    cost_col: str = typer.Option("cost", "--cost-col", help="Column name containing spot media spend."),
+    lift_col: str = typer.Option("incremental_lift", "--lift-col", help="Column name containing incremental lift."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Optional path to export optimized recommendations CSV."),
+    json_output: bool = typer.Option(False, "--json", help="Output machine-readable JSON summary for AI coding agents and pipelines."),
+    scenarios: bool = typer.Option(False, "--scenarios", help="Display multi-scenario comparison (Conservative, Balanced, Aggressive)."),
+    tz: str = typer.Option("UTC", "--tz", "-z", help="Timezone if raw airings are provided."),
+) -> None:
+    """Solves constrained budget reallocation using diminishing returns response curves and marginal CPIV."""
+    if spots.suffix.lower() in [".parquet", ".pq"]:
+        df = pd.read_parquet(spots)
+    else:
+        df = pd.read_csv(spots)
+
+    if lift_col not in df.columns:
+        if web is None:
+            console.print(f"[bold red]Column '{lift_col}' not found in spots file. Please provide --web to run attribution first.[/bold red]")
+            raise typer.Exit(code=1)
+        console.print("[dim]Running attribution pass prior to optimization...[/dim]")
+        airings_df = sl.load_airings(spots, tz=tz)
+        web_df = sl.load_telemetry(web, tz=tz)
+        df = sl.analyze_spots(airings=airings_df, web_telemetry=web_df)
+
+    opt_res = sl.optimize_budget(
+        df=df,
+        total_budget=budget,
+        channel_col=channel_col,
+        cost_col=cost_col,
+        lift_col=lift_col,
+        max_shift=max_shift,
+        elasticity=elasticity,
+        compute_scenarios=True,
+    )
+
+    if json_output:
+        print(json.dumps(opt_res.summary_dict(), indent=2))
+    else:
+        opt_res.print_summary(console=console)
+        if scenarios and opt_res.scenarios:
+            for sc_name, sc_df in opt_res.scenarios.items():
+                sc_table = Table(title=f"Scenario: {sc_name.capitalize()}")
+                sc_table.add_column("Channel", style="cyan")
+                sc_table.add_column("Optimal Spend", justify="right")
+                sc_table.add_column("Shift", justify="right")
+                sc_table.add_column("Projected Lift", justify="right", style="green")
+                sc_table.add_column("Proj CPIV", justify="right")
+                for _, r in sc_df.iterrows():
+                    s_amt = r["spend_shift"]
+                    s_str = f"+€{s_amt:,.0f}" if s_amt > 0 else f"-€{abs(s_amt):,.0f}" if s_amt < 0 else "€0"
+                    sc_table.add_row(
+                        str(r["channel"]),
+                        f"€{r['optimized_spend']:,.0f}",
+                        s_str,
+                        f"{r['projected_lift']:+,.1f}",
+                        f"€{r['projected_cpiv']:.2f}" if r["projected_cpiv"] != float("inf") else "-",
+                    )
+                console.print(sc_table)
+
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        opt_res.recommendations.to_csv(out, index=False)
+        console.print(f"[green]✔ Saved optimized recommendations to:[/] {out}")
+
+
 if __name__ == "__main__":
     app()

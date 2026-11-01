@@ -44,6 +44,12 @@ from spotlift.core.linear_regression_baseline import (
     LinearRegressionBaseline,
     compute_linear_regression_baseline,
 )
+from spotlift.core.optimizer import (
+    BudgetOptimizationResult,
+    ChannelResponseCurve,
+    calibrate_response_curves,
+    optimize_budget,
+)
 from spotlift.core.preflight import PreflightCheck, PreflightResult, validate_campaign_inputs
 from spotlift.core.single_spot import analyze_spots_core
 from spotlift.core.vectorized import integrate_isolated_spots_batch
@@ -218,6 +224,8 @@ __all__ = [
     "HAS_PRO",
     "AiringLogSchema",
     "BaselineFn",
+    "BudgetOptimizationResult",
+    "ChannelResponseCurve",
     "LinearRegressionBaseline",
     "MissingTelemetryGapWarning",
     "PreflightCheck",
@@ -233,6 +241,7 @@ __all__ = [
     "analyze_omnichannel_pro",
     "analyze_spots",
     "apply_conversion_model",
+    "calibrate_response_curves",
     "compute_continuous_weighted_share",
     "compute_diurnal_baseline",
     "compute_hourly_conversion_rates",
@@ -250,6 +259,7 @@ __all__ = [
     "is_pro_available",
     "load_airings",
     "load_telemetry",
+    "optimize_budget",
     "preflight",
     "simple_mean_baseline",
     "validate_campaign_inputs",

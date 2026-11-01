@@ -44,6 +44,46 @@ spotlift.analyze_spots(
 
 ---
 
+### `spotlift.optimize_budget()`
+
+Solves the constrained portfolio budget optimization problem using diminishing returns response curves ($R(s) = \alpha s^\beta$) and marginal CPIV ($m\text{CPIV}$) equalization under boundary conditions.
+
+```python
+spotlift.optimize_budget(
+    df: pd.DataFrame,
+    total_budget: Optional[float] = None,
+    channel_col: str = "channel",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    max_shift: float = 0.35,
+    elasticity: float = 0.70,
+    elasticity_map: Optional[Mapping[str, float]] = None,
+    bounds: Optional[Mapping[str, tuple[float, float]]] = None,
+    group_constraints: Optional[Mapping[str, Any]] = None,
+    compute_scenarios: bool = True,
+) -> BudgetOptimizationResult
+```
+
+#### Parameters
+
+* **`df`** (*pd.DataFrame*): DataFrame of attributed TV spots (output of `analyze_spots`).
+* **`total_budget`** (*float*, optional): Target total budget. If `None`, defaults to current flight spend (budget-neutral).
+* **`channel_col`** (*str*, default `"channel"`): Column identifying media channel or station.
+* **`cost_col`** (*str*, default `"cost"`): Column containing spot media cost.
+* **`lift_col`** (*str*, default `"incremental_lift"`): Column containing attributed incremental visitor lift.
+* **`max_shift`** (*float*, default `0.35`): Maximum relative budget reallocation allowed per channel ($\pm 35\%$).
+* **`elasticity`** (*float*, default `0.70`): Diminishing returns power-law exponent $\beta$ ($0 < \beta < 1$).
+* **`elasticity_map`** (*Mapping[str, float]*, optional): Channel-specific elasticity overrides.
+* **`bounds`** (*Mapping[str, tuple[float, float]]*, optional): Explicit `(min_spend, max_spend)` bounds per channel.
+* **`group_constraints`** (*Mapping[str, Any]*, optional): Broadcaster group share commitments (e.g. `{"Ad Alliance": {"channels": ["RTL", "VOX"], "min_share": 0.45}}`).
+* **`compute_scenarios`** (*bool*, default `True`): If `True`, computes Conservative ($\pm 15\%$), Balanced ($\pm 35\%$), and Aggressive ($\pm 60\%$) scenarios.
+
+#### Returns
+
+* **`BudgetOptimizationResult`**: Container holding `recommendations` DataFrame, current and optimized totals, percentage gains, `scenarios` dict, `print_summary()`, and `summary_dict()`.
+
+---
+
 ## Data Ingestion & Loaders
 
 ### `spotlift.load_airings()`

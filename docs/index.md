@@ -38,6 +38,9 @@ features:
   - icon: 📊
     title: Automated Executive Deliverables
     details: Generates multi-tab agency-ready Excel audit workbooks and interactive HTML post-buy performance dashboards in seconds.
+  - icon: ⚖️
+    title: Constrained Portfolio Optimizer
+    details: Equalizes marginal CPIV (mCPIV) under diminishing returns curves, inventory caps, and contractual agency commitments.
 ---
 
 ## The Modern Python Stack for Linear TV Attribution
@@ -62,8 +65,9 @@ results = spotlift.analyze_spots(
     collision_attribution="weighted_share"
 )
 
-# 3. Inspect spot-level incremental lift and CPIV
-print(results[["spot_id", "channel", "cost", "incremental_lift", "cpiv"]].head())
+# 3. Solve constrained portfolio reallocation
+reallocation = spotlift.optimize_budget(results, max_shift=0.35)
+reallocation.print_summary()
 ```
 
 ---
