@@ -84,6 +84,30 @@ spotlift.optimize_budget(
 
 ---
 
+### `spotlift.export_mmm_priors()`
+
+Exports calibrated channel-level response curves as empirical Bayesian priors for Media Mix Modeling (Meta Robyn, Google Meridian, Recast).
+
+```python
+spotlift.export_mmm_priors(
+    df: pd.DataFrame,
+    channel_col: str = "channel",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    default_elasticity: float = 0.70,
+    elasticity_map: Optional[Mapping[str, float]] = None,
+) -> dict[str, Any]
+```
+
+#### Returns
+
+* **`dict[str, Any]`**: Dictionary containing:
+  * `"channels"`: Channel-level parameter specs (`historical_spend`, `historical_lift`, `alpha_scale`, `elasticity_beta`, `half_saturation_spend`).
+  * `"meta_robyn_hyperparameters"`: Pre-formatted dictionary of `alphas` and `gammas` for Meta Robyn.
+  * `"google_meridian_priors"`: Pre-formatted dictionary of `half_saturation_prior` and `slope_prior` for Google Meridian.
+
+---
+
 ## Data Ingestion & Loaders
 
 ### `spotlift.load_airings()`

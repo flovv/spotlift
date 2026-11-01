@@ -166,3 +166,28 @@ To give planning committees defensible options tailored to agency risk tolerance
 3. **Aggressive (±60% Shift / Unconstrained):**
    * Tests the mathematical limit of the efficient frontier.
    * Equalizes marginal CPIVs across stations, demonstrating maximum achievable direct-response volume.
+
+---
+
+## 4. The SpotLift ➔ MMM Bridge: Exporting Bayesian Priors
+
+One of the greatest challenges in Media Mix Modeling (**Meta Robyn**, **Google Meridian**, **Recast**) is the "cold start" prior problem: data science teams must guess channel saturation shapes and half-decay points.
+
+SpotLift bridges tactical high-frequency TV attribution directly to executive macro MMM by exporting calibrated response curves as empirical Bayesian priors:
+
+```python
+import spotlift as sl
+
+# Extract empirical response curves and export framework-ready priors
+mmm_priors = sl.export_mmm_priors(attributed_spots, default_elasticity=0.70)
+
+# 1. Meta Robyn Hyperparameters
+print(mmm_priors["meta_robyn_hyperparameters"])
+# Output: {'RTL_alphas': [1.4], 'RTL_gammas': [0.45], 'Joyn_alphas': [1.4], ...}
+
+# 2. Google Meridian Priors
+print(mmm_priors["google_meridian_priors"])
+# Output: {'RTL': {'half_saturation_prior': 161500.0, 'slope_prior': 0.7}, ...}
+```
+
+This transforms SpotLift from an isolated attribution tool into the **ground-truth feeder** for your enterprise econometrics stack.

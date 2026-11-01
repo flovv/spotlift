@@ -133,6 +133,25 @@ def test_optimize_budget_group_constraints(sample_attribution_df: pd.DataFrame) 
     assert (ad_alliance_total / res.total_spend_optimized) >= 0.699
 
 
+def test_export_mmm_priors(sample_attribution_df: pd.DataFrame) -> None:
+    from spotlift.core.optimizer import export_mmm_priors
+
+    priors = export_mmm_priors(sample_attribution_df, default_elasticity=0.72)
+    assert "channels" in priors
+    assert "meta_robyn_hyperparameters" in priors
+    assert "google_meridian_priors" in priors
+
+    assert "RTL" in priors["channels"]
+    rtl_priors = priors["channels"]["RTL"]
+    assert rtl_priors["elasticity_beta"] == 0.72
+    assert rtl_priors["historical_spend"] > 0
+    assert rtl_priors["historical_lift"] > 0
+
+    assert "RTL_alphas" in priors["meta_robyn_hyperparameters"]
+    assert "RTL" in priors["google_meridian_priors"]
+    assert priors["google_meridian_priors"]["RTL"]["slope_prior"] == 0.72
+
+
 def test_cli_optimize(tmp_path) -> None:
     runner = CliRunner()
 

@@ -40,15 +40,15 @@ Traditional web analytics (GA4 alone) presented an incomplete picture that almos
 
 ## The Evidence: Omnichannel Scorecard
 
-| Station | Media Spend | Spots | Total GRP | GA4 Incremental Visits | AMC Amazon DPV Lift | Amazon Orders (36h Lag) | Blended Omnichannel CPIV | Actionable Assessment |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Joyn (CTV)** | €65,000 | 150 | 115.0 | +8,145 | +3,420 | +165 | **€5.62** | 🟢 **Top Direct Performer:** Expand to saturation bound |
-| **VOX** | €110,000 | 159 | 122.5 | +10,018 | +4,890 | +285 | **€7.38** | 🟢 **High E-Commerce Affinity:** Maintain allocation |
-| **ProSieben** | €135,000 | 132 | 96.8 | +10,007 | +7,110 | +390 | **€7.89** | 🟢 **Strong Retail Spillover:** Prune low dayparts, expand daytime |
-| **RTL** | €190,000 | 159 | 126.7 | +13,430 | +11,090 | +570 | **€7.75** | 🟡 **High Daytime Halo, Late-Night Waste:** Prune late fringe |
+| Station | Media Spend | Spots | Total GRP | GA4 Incremental Visits | AMC Amazon DPV Lift | Amazon Orders (36h Lag) | New-To-Brand (NTB) Share | Blended Omnichannel CPIV | Actionable Assessment |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Joyn (CTV)** | €65,000 | 150 | 115.0 | +8,145 | +3,420 | +165 | **71.2%** | **€5.62** | 🟢 **Top Direct Performer:** Expand to saturation bound |
+| **VOX** | €110,000 | 159 | 122.5 | +10,018 | +4,890 | +285 | **65.8%** | **€7.38** | 🟢 **High E-Commerce Affinity:** Maintain allocation |
+| **ProSieben** | €135,000 | 132 | 96.8 | +10,007 | +7,110 | +390 | **61.5%** | **€7.89** | 🟢 **Strong Retail Spillover:** Prune low dayparts, expand daytime |
+| **RTL** | €190,000 | 159 | 126.7 | +13,430 | +11,090 | +570 | **58.9%** | **€7.75** | 🟡 **High Daytime Halo, Late-Night Waste:** Prune late fringe |
 
-> [!IMPORTANT] The Omnichannel Turning Point
-> On direct web traffic alone, RTL appeared 78% more expensive than Joyn (€14.20 vs. €7.98). But when factoring in Amazon detail page glance views and 36-hour delayed retail purchases, RTL's blended omnichannel cost per response dropped to **€7.75**, proving its vital role in marketplace volume.
+> [!IMPORTANT] The Omnichannel & NTB Turning Point
+> On direct web traffic alone, RTL appeared 78% more expensive than Joyn (€14.20 vs. €7.98). But when factoring in Amazon detail page glance views and 36-hour delayed retail purchases, RTL's blended omnichannel cost per response dropped to **€7.75**. Crucially, **62.4% of total Amazon purchases were New-To-Brand (NTB)** customers—proving that broadcast TV expanded our customer acquisition reach into net-new households rather than simply subsidizing repeat buyers.
 
 ---
 

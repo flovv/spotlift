@@ -169,7 +169,9 @@ WITH amz_hourly_orders AS (
   SELECT
     DATE_TRUNC('hour', event_time) AS timestamp,
     SUM(total_purchases) AS units,
-    SUM(total_product_sales) AS gmv
+    SUM(total_product_sales) AS gmv,
+    SUM(new_to_brand_purchases) AS ntb_units,
+    SUM(new_to_brand_product_sales) AS ntb_gmv
   FROM
     amazon_attributed_events_by_traffic_time
   WHERE
@@ -223,7 +225,31 @@ LEFT JOIN amz_hourly_orders o ON h.timestamp = o.timestamp
 
 UNION ALL
 
--- 3. Sponsored Brands Clicks
+-- 3. New-To-Brand Units
+SELECT
+  h.timestamp,
+  'amz_ntb_units' AS channel_source,
+  CAST(COALESCE(o.ntb_units, 0) AS DOUBLE) AS value,
+  FALSE AS promo_active,
+  CAST(NULL AS DOUBLE) AS competitor_sov
+FROM all_hours h
+LEFT JOIN amz_hourly_orders o ON h.timestamp = o.timestamp
+
+UNION ALL
+
+-- 4. New-To-Brand GMV
+SELECT
+  h.timestamp,
+  'amz_ntb_gmv' AS channel_source,
+  CAST(COALESCE(o.ntb_gmv, 0.0) AS DOUBLE) AS value,
+  FALSE AS promo_active,
+  CAST(NULL AS DOUBLE) AS competitor_sov
+FROM all_hours h
+LEFT JOIN amz_hourly_orders o ON h.timestamp = o.timestamp
+
+UNION ALL
+
+-- 5. Sponsored Brands Clicks
 SELECT
   h.timestamp,
   'amz_sponsored_brand_clicks' AS channel_source,
@@ -235,7 +261,7 @@ LEFT JOIN amz_hourly_ppc p ON h.timestamp = p.timestamp
 
 UNION ALL
 
--- 4. Sponsored Brands Spend
+-- 6. Sponsored Brands Spend
 SELECT
   h.timestamp,
   'amz_sponsored_brand_spend' AS channel_source,

@@ -13,6 +13,8 @@ StandardChannelSourceType = Literal[
     "amz_add_to_cart",
     "amz_ordered_units",
     "amz_ordered_gmv",
+    "amz_ntb_units",
+    "amz_ntb_gmv",
     "amz_brand_search_impressions",
     "amz_sponsored_brand_clicks",
     "amz_sponsored_brand_spend",

@@ -36,6 +36,8 @@ def test_generate_amc_telemetry_sql_default():
     assert "sponsored_ads_traffic" in sql
     assert "amz_ordered_units" in sql
     assert "amz_ordered_gmv" in sql
+    assert "amz_ntb_units" in sql
+    assert "amz_ntb_gmv" in sql
     assert "amz_sponsored_brand_clicks" in sql
     assert "amz_sponsored_brand_spend" in sql
     assert "CAST(" in sql

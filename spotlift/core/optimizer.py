@@ -485,3 +485,72 @@ def optimize_budget(
         scenarios=scenarios,
         is_converged=True,
     )
+
+
+def export_mmm_priors(
+    df: pd.DataFrame,
+    *,
+    channel_col: str = "channel",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    default_elasticity: float = 0.70,
+    elasticity_map: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    """Exports calibrated channel-level response curves as informative Bayesian priors for Media Mix Models.
+
+    Bridges high-frequency tactical spot attribution with holistic macro econometrics.
+    Data science teams can inject these empirical priors directly into:
+      - Meta Robyn: ``hyperparameters`` (alpha/gamma saturation)
+      - Google Meridian: ``channel_priors`` (half_saturation, slope)
+      - Recast / Bayesian MMM regressions
+
+    Args:
+        df: DataFrame of attributed spots.
+        channel_col: Column identifying media channel or station.
+        cost_col: Column containing spot media spend.
+        lift_col: Column containing attributed incremental lift.
+        default_elasticity: Power-law diminishing returns elasticity (default: 0.70).
+        elasticity_map: Optional mapping of channel names to custom elasticity parameters.
+
+    Returns:
+        Nested dictionary with generic priors, Meta Robyn hyperparameters,
+        and Google Meridian channel prior specs.
+    """
+    curves = calibrate_response_curves(
+        df=df,
+        channel_col=channel_col,
+        cost_col=cost_col,
+        lift_col=lift_col,
+        default_elasticity=default_elasticity,
+        elasticity_map=elasticity_map,
+    )
+
+    channels_dict: dict[str, Any] = {}
+    robyn_dict: dict[str, Any] = {}
+    meridian_dict: dict[str, Any] = {}
+
+    for c in curves:
+        ch = c.channel
+        channels_dict[ch] = {
+            "historical_spend": c.current_spend,
+            "historical_lift": c.current_lift,
+            "historical_cpiv": c.current_cpiv if c.current_cpiv != float("inf") else None,
+            "alpha_scale": c.alpha,
+            "elasticity_beta": c.beta,
+            "half_saturation_spend": round(c.current_spend * 0.85, 2),
+        }
+        # Robyn uses Hill saturation parameters (alpha in [0.5, 3.0], gamma in [0.1, 1.0])
+        robyn_dict[f"{ch}_alphas"] = [round(max(0.5, min(2.5, c.beta * 2.0)), 2)]
+        robyn_dict[f"{ch}_gammas"] = [round(max(0.1, min(1.0, 0.45)), 2)]
+
+        # Meridian uses half_saturation and slope priors
+        meridian_dict[ch] = {
+            "half_saturation_prior": round(c.current_spend * 0.85, 2),
+            "slope_prior": round(c.beta, 2),
+        }
+
+    return {
+        "channels": channels_dict,
+        "meta_robyn_hyperparameters": robyn_dict,
+        "google_meridian_priors": meridian_dict,
+    }

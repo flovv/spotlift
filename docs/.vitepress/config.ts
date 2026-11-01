@@ -42,7 +42,7 @@ export default defineConfig({
       { text: 'SpotLift Pro', link: '/pro' },
       { text: 'CLI', link: '/cli' },
       { text: 'API Reference', link: '/api-reference' },
-      { text: 'vs. Legacy SaaS', link: '/vs-tvsquared' },
+      { text: 'vs. Competition', link: '/vs-tvsquared' },
       { text: 'GitHub', link: 'https://github.com/flovv/spotlift' }
     ],
     sidebar: [
@@ -71,7 +71,7 @@ export default defineConfig({
           { text: 'Core Econometrics & Baseline', link: '/methodology' },
           { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
           { text: 'Budget Portfolio Optimizer', link: '/optimizer' },
-          { text: 'vs. Legacy Providers & SaaS', link: '/vs-tvsquared' },
+          { text: 'vs. Competitors (EDO, TVSquared, Recast)', link: '/vs-tvsquared' },
         ]
       },
       {
