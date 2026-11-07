@@ -337,6 +337,7 @@ When two or more spots air within the 8-minute response window on different stat
 | **Amazon Branded PPC Cannibalization Auditor** | ❌ | ✅ Wasted PPC Tax Calculator |
 | **Creative Wear-Out (Daypart Fixed Effects)** | ❌ | ✅ OLS Decay Regression |
 | **Interactive Client HTML & Excel Export** | ❌ | ✅ Standalone Decks (White-Label) |
+| **Google Meridian & Meta Robyn Turnkey Packages** | ❌ (Generic Dicts) | ✅ `export_meridian_package` & `export_robyn_package` |
 
 > [!TIP]
 > **Need deconvolution for prime-time spot collisions and Amazon AMC halo modeling?**

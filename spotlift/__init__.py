@@ -68,7 +68,13 @@ from spotlift.io.fixtures import (
 from spotlift.io.loaders import load_airings, load_telemetry
 from spotlift.io.markdown_report import generate_markdown_summary
 from spotlift.io.sql_templates import generate_amc_telemetry_sql, generate_ga4_bigquery_sql
-from spotlift.pro.bridge import HAS_PRO, dispatch_omnichannel_pro, is_pro_available
+from spotlift.pro.bridge import (
+    HAS_PRO,
+    dispatch_omnichannel_pro,
+    export_meridian_package,
+    export_robyn_package,
+    is_pro_available,
+)
 from spotlift.pro.installer import install_pro
 
 __version__ = "0.3.2"
@@ -251,8 +257,10 @@ __all__ = [
     "compute_linear_regression_baseline",
     "disaggregate_mmm_contributions",
     "estimate_conversion_rate_for_spot",
+    "export_meridian_package",
     "export_mmm_priors",
     "export_pymc_lift_test",
+    "export_robyn_package",
     "generate_amc_telemetry_sql",
     "generate_dach_benchmark_dataset",
     "generate_ga4_bigquery_sql",

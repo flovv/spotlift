@@ -63,7 +63,58 @@ results = spotlift.analyze_omnichannel_pro(
 
 ---
 
-## 3. Automated Executive Deliverables
+## 3. Enterprise MMM Packages: Google Meridian & Meta Robyn
+
+While open-core `spotlift` provides native PyMC-Marketing calibration, enterprise brands and Tier-1 media agencies running **Google Meridian** (JAX/TFP) or **Meta Robyn** (R/Python Nevergrad) can generate turnkey, framework-ready calibration packages directly from **EM-deconvolved ground-truth spots**:
+
+### A. Google Meridian Turnkey ModelSpec (`export_meridian_package`)
+
+Google Meridian requires a calibration dataset (`calibration_data.csv`) and informative priors on the Hill saturation parameters: half-saturation spend $K$ and slope $S$.
+
+SpotLift Pro computes period-aligned residual standard errors and exports a ready-to-run Meridian package:
+
+```python
+import spotlift as sl
+
+# Export Google Meridian calibration data and ModelSpec YAML
+meridian_pack = sl.export_meridian_package(
+    spots_df=pro_attributed_spots,   # Deconvolved via Shifted-Gamma EM
+    freq="W-MON",                    # Matches weekly MMM rows
+    lift_col="key_event_response",   # Conversions metric
+    adstock_retention=0.35,          # 35% geometric adstock carryover
+    output_dir="./meridian_export"
+)
+# Automatically writes:
+#  - ./meridian_export/calibration_data.csv
+#  - ./meridian_export/meridian_model_spec.yaml (with LogNormal half_saturation priors)
+```
+
+### B. Meta Robyn Turnkey Calibration & R Script (`export_robyn_package`)
+
+Meta Robyn's multi-objective evolutionary algorithm (`robyn_run`) relies on `calibration_input` tables to penalize unrealistic candidate models.
+
+SpotLift Pro auto-generates both the required calibration table and a complete, ready-to-run R execution script with pre-tuned hyperparameter ranges:
+
+```python
+# Export Meta Robyn calibration input and turnkey R script
+robyn_pack = sl.export_robyn_package(
+    spots_df=pro_attributed_spots,
+    metric_name="conversions",
+    freq="W-MON",
+    adstock_retention=0.35,
+    output_dir="./robyn_export"
+)
+# Automatically writes:
+#  - ./robyn_export/calibration_input.csv (with channel, dates, liftAbs, spend, confidence)
+#  - ./robyn_export/run_robyn_calibration.R (with tuned alphas, gammas, and thetas)
+```
+
+> [!TIP]
+> **The Deconvolution Advantage:** Unlike open-core weighted-share, Pro's calibration packages are computed from **Shifted-Gamma EM-deconvolved spot lifts**. Your corporate MMM is calibrated on mathematically isolated station signals rather than blended prime-time collisions.
+
+---
+
+## 4. Automated Executive Deliverables
 
 SpotLift Pro eliminates manual spreadsheet manipulation by automatically generating publication-ready audit deliverables:
 
@@ -97,7 +148,7 @@ Export an interactive, responsive HTML report containing dynamic charts, lift cu
 
 ---
 
-## 4. White-Label Configuration
+## 5. White-Label Configuration
 
 Performance agencies can fully white-label all generated outputs:
 
@@ -113,7 +164,7 @@ white_label_config = {
 
 ---
 
-## 5. Licensing & Installation via Polar.sh
+## 6. Licensing & Installation via Polar.sh
 
 SpotLift Pro is distributed as a commercial binary wheel managed via [Polar.sh](https://polar.sh):
 

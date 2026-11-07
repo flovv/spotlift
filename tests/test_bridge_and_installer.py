@@ -95,3 +95,27 @@ def test_installer_live_key_network_error(monkeypatch):
 
     with pytest.raises(ProLicenseError, match="Could not reach license verification server"):
         installer.install_pro(api_key="SL_LIVE_TIMEOUT_KEY")
+
+
+def test_bridge_meridian_and_robyn_errors(monkeypatch):
+    monkeypatch.setattr(bridge, "HAS_PRO", False)
+    monkeypatch.setattr(bridge, "spotlift_pro", None)
+
+    import pandas as pd
+    df = pd.DataFrame([{"channel": "RTL", "timestamp": "2026-03-02 20:15:00", "cost": 1000.0, "incremental_lift": 100.0}])
+
+    with pytest.raises(ProFeatureNotInstalledError, match="SpotLift Pro is required for turnkey Google Meridian"):
+        bridge.export_meridian_package(df, api_key="SL_TEST")
+
+    with pytest.raises(ProFeatureNotInstalledError, match="SpotLift Pro is required for turnkey Meta Robyn"):
+        bridge.export_robyn_package(df, api_key="SL_TEST")
+
+    monkeypatch.setattr(bridge, "HAS_PRO", True)
+    monkeypatch.setattr(bridge, "spotlift_pro", object())
+    monkeypatch.delenv("SPOTLIFT_API_KEY", raising=False)
+
+    with pytest.raises(ProLicenseError, match="SpotLift Pro license key required"):
+        bridge.export_meridian_package(df, api_key=None)
+
+    with pytest.raises(ProLicenseError, match="SpotLift Pro license key required"):
+        bridge.export_robyn_package(df, api_key=None)

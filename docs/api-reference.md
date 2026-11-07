@@ -169,6 +169,54 @@ spotlift.disaggregate_mmm_contributions(
 
 ---
 
+### `spotlift.export_meridian_package()` (Pro)
+
+Exports Google Meridian calibration dataset (`calibration_data.csv`) and turnkey `ModelSpec` YAML specification with LogNormal Hill half-saturation priors from Shifted-Gamma EM deconvolved spot lifts.
+
+```python
+spotlift.export_meridian_package(
+    spots_df: pd.DataFrame,
+    *,
+    api_key: Optional[str] = None,
+    channel_col: str = "channel",
+    timestamp_col: str = "timestamp",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    freq: str = "W-MON",
+    elasticity: float = 0.70,
+    adstock_retention: float = 0.0,
+    mmm_channel_name: Optional[str] = None,
+    min_sigma_rel: float = 0.05,
+    output_dir: Optional[Union[str, Path]] = None,
+) -> dict[str, Any]
+```
+
+---
+
+### `spotlift.export_robyn_package()` (Pro)
+
+Exports Meta Robyn calibration table (`calibration_input.csv`) and turnkey R execution script (`run_robyn_calibration.R`) with pre-tuned hyperparameter ranges (`alphas`, `gammas`, `thetas`).
+
+```python
+spotlift.export_robyn_package(
+    spots_df: pd.DataFrame,
+    *,
+    api_key: Optional[str] = None,
+    channel_col: str = "channel",
+    timestamp_col: str = "timestamp",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    metric_name: str = "conversions",
+    freq: str = "W-MON",
+    elasticity: float = 0.70,
+    adstock_retention: float = 0.0,
+    mmm_channel_name: Optional[str] = None,
+    output_dir: Optional[Union[str, Path]] = None,
+) -> dict[str, Any]
+```
+
+---
+
 ## Data Ingestion & Loaders
 
 ### `spotlift.load_airings()`
