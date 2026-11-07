@@ -205,4 +205,22 @@ print(mmm_priors["google_meridian_priors"])
 # Output: {'RTL': {'half_saturation_prior': 40375.0, 'slope_prior': 0.7}, ...}
 ```
 
-This transforms SpotLift from an isolated attribution tool into the **ground-truth feeder** for your enterprise econometrics stack.
+### Top-Down MMM Disaggregation: Breaking PyMC Results Down to Channel & Creative Level
+
+Because a weekly MMM cannot include 15 separate TV stations $\times$ 6 creatives (90 collinear columns), best practice is a **bidirectional hierarchical loop**:
+1. **Bottom-Up Calibration (`export_pymc_lift_test`):** Pool stations into `tv_broadcast` and anchor the weekly PyMC MMM saturation curve.
+2. **Top-Down Disaggregation (`disaggregate_mmm_contributions`):** Take PyMC-Marketing's weekly posterior TV contributions (including multi-week adstock carryover and credible intervals) and allocate them back down to individual **TV stations (`channel`)**, **creatives (`creative_id`)**, or **`["channel", "creative_id"]`** pairs using SpotLift's adstock-filtered causal lift weights ($A_{g, t} = D_{g, t} + \lambda A_{g, t-1}$):
+
+```python
+# Break weekly PyMC MMM posterior TV contributions down to Creative & Station level
+creative_mmm_df = sl.disaggregate_mmm_contributions(
+    attributed_spots,
+    mmm_weekly_posterior_df,        # Columns: ['date', 'contribution', 'lower', 'upper']
+    by=["channel", "creative_id"],  # Or "channel" / "creative_id"
+    freq="W-MON",
+    adstock_retention=0.35,         # Propagates creative carryover into subsequent/dark weeks
+)
+print(creative_mmm_df[["channel", "creative_id", "spend", "direct_lift", "halo_lift", "mmm_contribution", "mmm_cpiv"]])
+```
+
+This transforms SpotLift from an isolated attribution tool into the **ground-truth feeder and granular disaggregator** for your enterprise econometrics stack.

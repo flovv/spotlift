@@ -487,6 +487,19 @@ def optimize_budget(
     )
 
 
+def _to_mmm_period(ts_series: pd.Series, freq: str) -> pd.Series:
+    """Converts timestamps to pandas Periods aligned with MMM week-start conventions.
+
+    In PyMC-Marketing and standard MMM tables, ``freq="W-MON"`` denotes weeks *starting*
+    on Monday (Monday 00:00 through Sunday 23:59), whereas ``Series.dt.to_period("W-MON")``
+    in pandas denotes weeks *ending* on Monday. Mapping ``"W-MON"`` to ``"W-SUN"`` ensures
+    Monday MMM dates and all Monday-through-Sunday spots map to the exact same ISO week.
+    """
+    clean_ts = pd.to_datetime(ts_series, utc=True).dt.tz_localize(None)
+    period_freq = "W-SUN" if freq.upper() == "W-MON" else freq
+    return clean_ts.dt.to_period(period_freq)
+
+
 def export_pymc_lift_test(
     df: pd.DataFrame,
     *,
@@ -570,8 +583,7 @@ def export_pymc_lift_test(
 
     # Step 2: Group by channel and MMM time period
     if freq is not None and timestamp_col in work.columns:
-        ts_series = pd.to_datetime(work[timestamp_col], utc=True).dt.tz_localize(None)
-        work["_period"] = ts_series.dt.to_period(freq)
+        work["_period"] = _to_mmm_period(work[timestamp_col], freq)
         group_cols = ["_mmm_ch", "_period"]
     else:
         group_cols = ["_mmm_ch"]
@@ -658,8 +670,7 @@ def export_mmm_priors(
     # Determine number of active MMM periods per channel so half-saturation priors match weekly MMM scale
     period_counts: dict[str, int] = {}
     if timestamp_col in df.columns and not df.empty:
-        ts_series = pd.to_datetime(df[timestamp_col], utc=True).dt.tz_localize(None)
-        periods = ts_series.dt.to_period(freq)
+        periods = _to_mmm_period(df[timestamp_col], freq)
         for ch, grp_p in periods.groupby(df[channel_col].astype(str)):
             period_counts[str(ch)] = max(1, int(grp_p.nunique()))
 
@@ -710,3 +721,254 @@ def export_mmm_priors(
         "meta_robyn_hyperparameters": robyn_dict,
         "google_meridian_priors": meridian_dict,
     }
+
+
+def disaggregate_mmm_contributions(
+    spots_df: pd.DataFrame,
+    mmm_contributions: float | pd.DataFrame,
+    *,
+    by: str | Sequence[str] = "channel",
+    timestamp_col: str = "timestamp",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    date_col: str = "date",
+    contribution_col: str = "contribution",
+    lower_col: str | None = "lower",
+    upper_col: str | None = "upper",
+    freq: str = "W-MON",
+    adstock_retention: float = 0.0,
+    return_period_grain: bool = False,
+) -> pd.DataFrame:
+    """Disaggregates macro PyMC-Marketing TV contributions down to channel, creative, or daypart level.
+
+    Solves the top-down hierarchical allocation problem without the two classic MMM disaggregation bugs:
+      1. **Avoids Spend-Share Allocation Bias:** Allocating MMM lift by spend share forces every creative
+         and station to have identical ROAS/CPIV. Instead, SpotLift weights each sub-dimension by its
+         observed high-frequency causal lift.
+      2. **Adstock-Aware Carryover Propagation (Dark-Week & Creative Rotation Support):** When
+         ``mmm_contributions`` is a weekly/daily DataFrame and ``adstock_retention > 0``, SpotLift
+         applies the geometric adstock filter ``A_{g,t} = D_{g,t} + lambda * A_{g,t-1}`` to each
+         channel/creative's direct lift series. This accurately attributes delayed MMM carryover
+         (including dark hiatus weeks with zero airings) back to the specific channels and creatives
+         that aired in prior weeks.
+
+    Args:
+        spots_df: Attributed spots DataFrame from ``analyze_spots()``.
+        mmm_contributions: Either a scalar total MMM TV contribution (``float``/``int``) or a time-series
+            ``pd.DataFrame`` of posterior MMM TV contributions with ``date_col`` and ``contribution_col``
+            (plus optional ``lower_col`` and ``upper_col`` credible intervals).
+        by: Granular column(s) to break down by, e.g. ``"channel"``, ``"creative_id"``, or
+            ``["channel", "creative_id"]``.
+        timestamp_col: Timestamp column in ``spots_df``.
+        cost_col: Media spend column in ``spots_df``.
+        lift_col: High-frequency response column in ``spots_df`` (e.g. ``"incremental_lift"`` or
+            ``"key_event_response"``).
+        date_col: Date column in ``mmm_contributions`` DataFrame.
+        contribution_col: Posterior mean/median TV contribution column in ``mmm_contributions``.
+        lower_col: Optional lower credible interval column (e.g. ``"lower"`` or ``"hdi_3%"``).
+        upper_col: Optional upper credible interval column (e.g. ``"upper"`` or ``"hdi_97%"``).
+        freq: Pandas period offset matching the MMM time grain (default: ``"W-MON"``).
+        adstock_retention: Geometric adstock decay parameter lambda in [0, 1) matching the PyMC MMM
+            posterior adstock retention (default: 0.0).
+        return_period_grain: If ``True`` and ``mmm_contributions`` is a DataFrame, returns the full
+            period-by-segment panel DataFrame; otherwise aggregates to a summary table per ``by`` group.
+
+    Returns:
+        DataFrame decomposing ``spend``, ``direct_lift``, ``halo_lift``, ``mmm_contribution``,
+        ``share_of_spend``, ``share_of_mmm``, ``direct_cpiv``, and ``mmm_cpiv`` (plus ``mmm_lower``
+        and ``mmm_upper`` if credible intervals are supplied).
+    """
+    if not (0.0 <= adstock_retention < 1.0):
+        raise ValueError(f"adstock_retention must be in [0.0, 1.0), got {adstock_retention}")
+
+    by_cols = [by] if isinstance(by, str) else list(by)
+    for col in [*by_cols, cost_col, lift_col]:
+        if col not in spots_df.columns:
+            raise ValueError(f"Required column '{col}' missing from spots_df.")
+
+    if spots_df.empty:
+        return pd.DataFrame(
+            columns=[
+                *by_cols,
+                "spend",
+                "direct_lift",
+                "halo_lift",
+                "mmm_contribution",
+                "share_of_spend",
+                "share_of_mmm",
+                "direct_cpiv",
+                "mmm_cpiv",
+            ]
+        )
+
+    work = spots_df.copy()
+
+    # Case 1: Scalar campaign-total MMM contribution
+    if isinstance(mmm_contributions, (int, float, np.number)):
+        total_mmm = float(mmm_contributions)
+        grp_df = (
+            work.groupby(by_cols, as_index=False)
+            .agg(
+                spend=(cost_col, "sum"),
+                direct_lift=(lift_col, "sum"),
+            )
+        )
+        pos_lift = np.maximum(0.0, grp_df["direct_lift"].to_numpy(dtype=float))
+        tot_pos_lift = float(np.sum(pos_lift))
+        tot_spend = float(grp_df["spend"].sum())
+
+        if tot_pos_lift > 0:
+            weights = pos_lift / tot_pos_lift
+        elif tot_spend > 0:
+            weights = grp_df["spend"].to_numpy(dtype=float) / tot_spend
+        else:
+            weights = np.full(len(grp_df), 1.0 / len(grp_df))
+
+        grp_df["mmm_contribution"] = weights * total_mmm
+        grp_df["halo_lift"] = grp_df["mmm_contribution"] - grp_df["direct_lift"]
+        grp_df["share_of_spend"] = np.where(tot_spend > 0, grp_df["spend"] / tot_spend, 0.0)
+        grp_df["share_of_mmm"] = weights
+        grp_df["direct_cpiv"] = np.where(
+            grp_df["direct_lift"] > 0, grp_df["spend"] / grp_df["direct_lift"], float("inf")
+        )
+        grp_df["mmm_cpiv"] = np.where(
+            grp_df["mmm_contribution"] > 0, grp_df["spend"] / grp_df["mmm_contribution"], float("inf")
+        )
+        return grp_df.sort_values("mmm_contribution", ascending=False).reset_index(drop=True)
+
+    # Case 2: Period-aligned DataFrame of MMM contributions (with adstock carryover tracking)
+    if not isinstance(mmm_contributions, pd.DataFrame):
+        raise TypeError("mmm_contributions must be a float, int, or pd.DataFrame.")
+    for req_c in [date_col, contribution_col]:
+        if req_c not in mmm_contributions.columns:
+            raise ValueError(f"Required column '{req_c}' missing from mmm_contributions DataFrame.")
+
+    has_lower = lower_col is not None and lower_col in mmm_contributions.columns
+    has_upper = upper_col is not None and upper_col in mmm_contributions.columns
+
+    work["_period"] = _to_mmm_period(work[timestamp_col], freq)
+
+    mmm_work = mmm_contributions.copy()
+    mmm_work["_period"] = _to_mmm_period(mmm_work[date_col], freq)
+
+    agg_dict: dict[str, tuple[str, str]] = {"_mmm_val": (contribution_col, "sum")}
+    if has_lower and lower_col is not None:
+        agg_dict["_mmm_low"] = (lower_col, "sum")
+    if has_upper and upper_col is not None:
+        agg_dict["_mmm_high"] = (upper_col, "sum")
+    mmm_period_df = mmm_work.groupby("_period", as_index=False).agg(**agg_dict)
+
+    spot_period_df = (
+        work.groupby(["_period", *by_cols], as_index=False)
+        .agg(
+            spend=(cost_col, "sum"),
+            direct_lift=(lift_col, "sum"),
+        )
+    )
+
+    # Build chronological period sequence spanning both spots and MMM periods
+    all_periods = sorted(set(spot_period_df["_period"]).union(set(mmm_period_df["_period"])))
+    unique_groups_df = work[by_cols].drop_duplicates().reset_index(drop=True)
+
+    # Compute adstock-carried direct lift & spend per group across periods
+    panel_rows: list[dict[str, Any]] = []
+    for _, g_row in unique_groups_df.iterrows():
+        g_filter = np.ones(len(spot_period_df), dtype=bool)
+        g_dict: dict[str, Any] = {}
+        for c in by_cols:
+            g_dict[c] = g_row[c]
+            g_filter &= spot_period_df[c] == g_row[c]
+        sub_spots = spot_period_df.loc[g_filter].set_index("_period")
+
+        carried_lift = 0.0
+        carried_spend = 0.0
+        for p in all_periods:
+            d_lift = float(sub_spots.loc[p, "direct_lift"]) if p in sub_spots.index else 0.0
+            d_spend = float(sub_spots.loc[p, "spend"]) if p in sub_spots.index else 0.0
+            carried_lift = max(0.0, d_lift) + adstock_retention * carried_lift
+            carried_spend = d_spend + adstock_retention * carried_spend
+            panel_rows.append({
+                "_period": p,
+                **g_dict,
+                "spend": d_spend,
+                "direct_lift": d_lift,
+                "_adstock_lift": carried_lift,
+                "_adstock_spend": carried_spend,
+            })
+
+    panel_df = pd.DataFrame(panel_rows)
+    panel_df = panel_df.merge(mmm_period_df, on="_period", how="left")
+    panel_df["_mmm_val"] = panel_df["_mmm_val"].fillna(0.0)
+    if has_lower:
+        panel_df["_mmm_low"] = panel_df["_mmm_low"].fillna(0.0)
+    if has_upper:
+        panel_df["_mmm_high"] = panel_df["_mmm_high"].fillna(0.0)
+
+    # Compute within-period allocation weights across groups
+    period_lift_totals = panel_df.groupby("_period")["_adstock_lift"].transform("sum")
+    period_spend_totals = panel_df.groupby("_period")["_adstock_spend"].transform("sum")
+    n_groups = max(1, len(unique_groups_df))
+
+    weights_series = np.where(
+        period_lift_totals > 0,
+        panel_df["_adstock_lift"] / period_lift_totals,
+        np.where(
+            period_spend_totals > 0,
+            panel_df["_adstock_spend"] / period_spend_totals,
+            1.0 / n_groups,
+        ),
+    )
+    panel_df["share_of_mmm"] = weights_series
+    panel_df["mmm_contribution"] = panel_df["share_of_mmm"] * panel_df["_mmm_val"]
+    panel_df["halo_lift"] = panel_df["mmm_contribution"] - panel_df["direct_lift"]
+    if has_lower:
+        panel_df["mmm_lower"] = panel_df["share_of_mmm"] * panel_df["_mmm_low"]
+    if has_upper:
+        panel_df["mmm_upper"] = panel_df["share_of_mmm"] * panel_df["_mmm_high"]
+
+    if return_period_grain:
+        panel_df["period"] = panel_df["_period"].astype(str)
+        out_cols = [
+            "period",
+            *by_cols,
+            "spend",
+            "direct_lift",
+            "halo_lift",
+            "mmm_contribution",
+            "share_of_mmm",
+        ]
+        if has_lower:
+            out_cols.append("mmm_lower")
+        if has_upper:
+            out_cols.append("mmm_upper")
+        return panel_df[out_cols].reset_index(drop=True)
+
+    # Aggregate over periods to group-level summary
+    sum_agg: dict[str, tuple[str, str]] = {
+        "spend": ("spend", "sum"),
+        "direct_lift": ("direct_lift", "sum"),
+        "halo_lift": ("halo_lift", "sum"),
+        "mmm_contribution": ("mmm_contribution", "sum"),
+    }
+    if has_lower:
+        sum_agg["mmm_lower"] = ("mmm_lower", "sum")
+    if has_upper:
+        sum_agg["mmm_upper"] = ("mmm_upper", "sum")
+
+    summary_df = panel_df.groupby(by_cols, as_index=False).agg(**sum_agg)
+    tot_s = float(summary_df["spend"].sum())
+    tot_m = float(summary_df["mmm_contribution"].sum())
+
+    summary_df["share_of_spend"] = np.where(tot_s > 0, summary_df["spend"] / tot_s, 0.0)
+    summary_df["share_of_mmm"] = np.where(tot_m > 0, summary_df["mmm_contribution"] / tot_m, 0.0)
+    summary_df["direct_cpiv"] = np.where(
+        summary_df["direct_lift"] > 0, summary_df["spend"] / summary_df["direct_lift"], float("inf")
+    )
+    summary_df["mmm_cpiv"] = np.where(
+        summary_df["mmm_contribution"] > 0,
+        summary_df["spend"] / summary_df["mmm_contribution"],
+        float("inf"),
+    )
+
+    return summary_df.sort_values("mmm_contribution", ascending=False).reset_index(drop=True)
+

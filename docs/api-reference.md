@@ -141,6 +141,34 @@ spotlift.export_mmm_priors(
 
 ---
 
+### `spotlift.disaggregate_mmm_contributions()`
+
+Disaggregates macro PyMC-Marketing TV contributions (and optional Bayesian credible intervals) down to individual TV stations (`"channel"`), creatives (`"creative_id"`), or multi-dimensional slices (`["channel", "creative_id"]`) using adstock-filtered high-frequency causal lift weights.
+
+```python
+spotlift.disaggregate_mmm_contributions(
+    spots_df: pd.DataFrame,
+    mmm_contributions: Union[float, pd.DataFrame],
+    by: Union[str, Sequence[str]] = "channel",
+    timestamp_col: str = "timestamp",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    date_col: str = "date",
+    contribution_col: str = "contribution",
+    lower_col: Optional[str] = "lower",
+    upper_col: Optional[str] = "upper",
+    freq: str = "W-MON",
+    adstock_retention: float = 0.0,
+    return_period_grain: bool = False,
+) -> pd.DataFrame
+```
+
+#### Returns
+
+* **`pd.DataFrame`**: Decomposed table with `spend`, `direct_lift` (8-minute spike), `halo_lift` (delayed MMM adstock & cross-channel halo), `mmm_contribution`, `share_of_spend`, `share_of_mmm`, `direct_cpiv`, and `mmm_cpiv` (plus `mmm_lower` and `mmm_upper` when credible intervals are supplied).
+
+---
+
 ## Data Ingestion & Loaders
 
 ### `spotlift.load_airings()`

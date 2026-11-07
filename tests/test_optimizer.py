@@ -197,6 +197,74 @@ def test_export_pymc_lift_test_grain_and_residuals() -> None:
     assert conv_df["delta_y"].iloc[0] == pytest.approx(direct_week_convs * 2.0, rel=1e-2)
 
 
+def test_disaggregate_mmm_contributions_channel_and_creative() -> None:
+    from spotlift.core.optimizer import disaggregate_mmm_contributions
+
+    # Week 1: Creative_Hero on RTL (high efficiency: 1000 lift for 5000 spend)
+    #         Creative_Brand on VOX (low efficiency: 250 lift for 5000 spend)
+    # Week 2: Dark week (0 airings), but PyMC MMM attributes +500 adstock halo!
+    spots = pd.DataFrame([
+        {
+            "channel": "RTL",
+            "creative_id": "Creative_Hero_30s",
+            "timestamp": "2026-03-02T20:15:00Z",
+            "cost": 5000.0,
+            "incremental_lift": 1000.0,
+        },
+        {
+            "channel": "VOX",
+            "creative_id": "Creative_Brand_15s",
+            "timestamp": "2026-03-03T21:00:00Z",
+            "cost": 5000.0,
+            "incremental_lift": 250.0,
+        },
+    ])
+
+    mmm_weekly = pd.DataFrame([
+        {"date": "2026-03-02", "contribution": 1500.0, "lower": 1200.0, "upper": 1800.0},
+        {"date": "2026-03-09", "contribution": 500.0, "lower": 350.0, "upper": 650.0},
+    ])
+
+    # 1. Disaggregate by creative_id with adstock_retention=0.50
+    creative_df = disaggregate_mmm_contributions(
+        spots,
+        mmm_weekly,
+        by="creative_id",
+        freq="W-MON",
+        adstock_retention=0.50,
+    )
+    assert len(creative_df) == 2
+    # Exact additivity: sum of creative MMM contributions must equal 1500 + 500 = 2000
+    assert creative_df["mmm_contribution"].sum() == pytest.approx(2000.0)
+    assert creative_df["mmm_lower"].sum() == pytest.approx(1550.0)
+    assert creative_df["mmm_upper"].sum() == pytest.approx(2450.0)
+
+    # Creative_Hero_30s had 80% of causal lift (1000 / 1250), despite 50% spend share:
+    hero_row = creative_df.loc[creative_df["creative_id"] == "Creative_Hero_30s"].iloc[0]
+    assert hero_row["share_of_spend"] == pytest.approx(0.50)
+    assert hero_row["share_of_mmm"] == pytest.approx(0.80)
+    assert hero_row["mmm_contribution"] == pytest.approx(1600.0)
+    assert hero_row["halo_lift"] == pytest.approx(600.0)  # 1600 total MMM - 1000 direct
+
+    # 2. Check weekly panel grain (verifying Dark Week carryover attribution in Week 2)
+    panel_df = disaggregate_mmm_contributions(
+        spots,
+        mmm_weekly,
+        by=["channel", "creative_id"],
+        freq="W-MON",
+        adstock_retention=0.50,
+        return_period_grain=True,
+    )
+    assert len(panel_df) == 4  # 2 groups x 2 weeks
+    week2_hero = panel_df.loc[
+        (panel_df["creative_id"] == "Creative_Hero_30s") & (panel_df["spend"] == 0.0)
+    ].iloc[0]
+    # In dark Week 2, Hero creative still gets 80% of Week 2's 500 adstock halo = 400!
+    assert week2_hero["mmm_contribution"] == pytest.approx(400.0)
+    assert week2_hero["halo_lift"] == pytest.approx(400.0)
+
+
+
 def test_cli_optimize(tmp_path) -> None:
     runner = CliRunner()
 
