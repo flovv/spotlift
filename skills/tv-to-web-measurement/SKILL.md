@@ -1,7 +1,7 @@
 ---
 name: tv-to-web-measurement
 description: Measure Linear TV lift from airings and GA4 telemetry using SpotLift (Open-Core) and SpotLift Pro.
-version: 0.3.1
+version: 0.3.2
 author: flovv (flovv), Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -223,6 +223,40 @@ for state_code, state_airings in airings_df.groupby("country_or_region"):
     state_reports.append(res)
 full_regional_report = pd.concat(state_reports, ignore_index=True)
 ```
+
+### Recipe E: Constrained Budget Optimization & Hierarchical MMM Bridge
+Equalize marginal CPIVs under diminishing returns curves ($R(s) = \alpha s^\beta$) and agency contract constraints:
+
+```python
+# 1. Constrained Portfolio Optimization:
+opt_result = sl.optimize_budget(
+    df=attributed_spots,
+    total_budget=500000.0,
+    max_shift=0.35,
+    group_constraints={"Ad Alliance": {"channels": ["RTL", "VOX"], "min_share": 0.45}},
+)
+opt_result.print_summary()
+
+# 2. Bottom-Up PyMC-Marketing MMM Calibration (period-aligned & residual-calibrated):
+df_lift_test = sl.export_pymc_lift_test(
+    attributed_spots,
+    freq="W-MON",
+    lift_col="key_event_response",
+    adstock_retention=0.35,
+    mmm_channel_name="tv_broadcast",
+)
+# Pass to pymc-marketing: mmm.add_lift_test_measurements(df_lift_test)
+
+# 3. Top-Down MMM Disaggregation down to Creative and Channel:
+creative_mmm = sl.disaggregate_mmm_contributions(
+    spots_df=attributed_spots,
+    mmm_contributions=pymc_weekly_posterior_df,
+    by=["channel", "creative_id"],
+    freq="W-MON",
+    adstock_retention=0.35,
+)
+```
+
 
 ---
 

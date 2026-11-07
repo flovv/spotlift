@@ -41,6 +41,9 @@ features:
   - icon: ⚖️
     title: Constrained Portfolio Optimizer
     details: Equalizes marginal CPIV (mCPIV) under diminishing returns curves, inventory caps, and contractual agency commitments.
+  - icon: 🔄
+    title: Hierarchical MMM Calibration & Creative Breakdown
+    details: Calibrates Bayesian Media Mix Models (PyMC-Marketing, Robyn, Meridian) and disaggregates macro contributions to TV channels and creatives.
 ---
 
 ## The Modern Python Stack for Linear TV Attribution

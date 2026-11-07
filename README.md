@@ -146,6 +146,51 @@ results.print_summary()
 
 ---
 
+## 🔄 Media Mix Modeling (MMM) Bridge: PyMC-Marketing, Robyn & Meridian
+
+While SpotLift measures tactical high-frequency response (5–15 minute window), macro brand planning requires aggregate **Media Mix Modeling (MMM)**. SpotLift bridges tactical TV attribution with macro econometrics via a **two-way hierarchical workflow**:
+
+### 1. Bottom-Up Calibration (`export_pymc_lift_test` & `export_mmm_priors`)
+Avoids the classic Jensen's Inequality distortion ($f(\sum x_t) \neq \sum f(x_t)$) and planned-spend $\sigma$ explosion by exporting period-aligned (`freq="W-MON"`), residual-calibrated lift test observations directly for PyMC-Marketing's `add_lift_test_measurements()`:
+
+```python
+import spotlift as sl
+
+# Export period-aligned, residual-calibrated lift tests for PyMC-Marketing
+df_lift_test = sl.export_pymc_lift_test(
+    attributed_spots,
+    freq="W-MON",                   # Align with weekly MMM rows
+    lift_col="key_event_response",  # Conversions target
+    adstock_retention=0.35,         # Scale immediate spike for multi-week carryover
+    mmm_channel_name="tv_broadcast" # Pool stations to prevent collinearity
+)
+
+# Calibrate PyMC-Marketing:
+# mmm.add_lift_test_measurements(df_lift_test)
+```
+
+Export empirical Bayesian priors for **Meta Robyn** (`alphas`/`gammas`) and **Google Meridian** (`half_saturation_prior`/`slope_prior`):
+```python
+priors = sl.export_mmm_priors(attributed_spots, freq="W-MON", default_elasticity=0.70)
+```
+
+### 2. Top-Down Creative & Channel Breakdown (`disaggregate_mmm_contributions`)
+Weekly MMMs cannot include 60+ collinear station $\times$ creative columns. SpotLift takes aggregate PyMC TV posterior contributions and decomposes them down to individual **TV stations (`channel`)** and **creatives (`creative_id`)** using causal adstock-filtered lift weights ($A_{g, t} = D_{g, t} + \lambda A_{g, t-1}$), accurately attributing carryover even in dark hiatus weeks:
+
+```python
+# Break down weekly PyMC TV contribution (including dark weeks) to Creative level
+creative_mmm = sl.disaggregate_mmm_contributions(
+    spots_df=attributed_spots,
+    mmm_contributions=pymc_weekly_posterior,  # columns: date, contribution, lower, upper
+    by=["channel", "creative_id"],
+    freq="W-MON",
+    adstock_retention=0.35,
+)
+print(creative_mmm[["channel", "creative_id", "spend", "direct_lift", "halo_lift", "mmm_contribution", "mmm_cpiv"]])
+```
+
+---
+
 ## Methodological Foundation & Econometric Transparency
 
 ### 1. Short-Term Direct Response vs. Total TV ROI
