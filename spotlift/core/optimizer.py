@@ -510,6 +510,7 @@ def export_pymc_lift_test(
     lift_col: str = "incremental_lift",
     freq: str | None = "W-MON",
     elasticity: float = 0.70,
+    elasticity_map: Mapping[str, float] | None = None,
     adstock_retention: float = 0.0,
     min_sigma_rel: float = 0.05,
 ) -> pd.DataFrame:
@@ -566,6 +567,7 @@ def export_pymc_lift_test(
     # Step 1: Compute spot-level residuals around channel response curves to isolate noise from spend size
     work["_residual"] = 0.0
     for ch, grp in work.groupby("_mmm_ch"):
+        ch_beta = float(elasticity_map[str(ch)]) if (elasticity_map and str(ch) in elasticity_map) else elasticity
         costs = grp[cost_col].to_numpy(dtype=float)
         lifts = grp[lift_col].to_numpy(dtype=float)
         pos_mask = costs > 0
@@ -573,9 +575,9 @@ def export_pymc_lift_test(
         tot_l = float(np.sum(lifts[pos_mask]))
         if tot_c > 0 and tot_l > 0 and len(grp) > 1:
             # Fit power-law scale alpha on spot level: sum(l) / sum(c^beta)
-            denom = float(np.sum( np.power(costs[pos_mask], elasticity) ))
+            denom = float(np.sum(np.power(costs[pos_mask], ch_beta)))
             alpha_spot = tot_l / denom if denom > 0 else 0.0
-            pred_lifts = np.where(pos_mask, alpha_spot * np.power(np.maximum(0.0, costs), elasticity), 0.0)
+            pred_lifts = np.where(pos_mask, alpha_spot * np.power(np.maximum(0.0, costs), ch_beta), 0.0)
             work.loc[grp.index, "_residual"] = lifts - pred_lifts
         else:
             mean_l = float(np.mean(lifts)) if len(lifts) > 0 else 0.0
@@ -712,6 +714,7 @@ def export_mmm_priors(
         lift_col=lift_col,
         freq=freq,
         elasticity=default_elasticity,
+        elasticity_map=elasticity_map,
         adstock_retention=adstock_retention,
     )
 
@@ -866,8 +869,13 @@ def disaggregate_mmm_contributions(
         )
     )
 
-    # Build chronological period sequence spanning both spots and MMM periods
-    all_periods = sorted(set(spot_period_df["_period"]).union(set(mmm_period_df["_period"])))
+    # Build contiguous chronological period sequence spanning both spots and MMM periods
+    observed_periods = sorted(set(spot_period_df["_period"]).union(set(mmm_period_df["_period"])))
+    if len(observed_periods) > 1:
+        period_freq = "W-SUN" if freq.upper() == "W-MON" else freq
+        all_periods = list(pd.period_range(observed_periods[0], observed_periods[-1], freq=period_freq))
+    else:
+        all_periods = observed_periods
     unique_groups_df = work[by_cols].drop_duplicates().reset_index(drop=True)
 
     # Compute adstock-carried direct lift & spend per group across periods
