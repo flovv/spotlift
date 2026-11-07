@@ -487,34 +487,164 @@ def optimize_budget(
     )
 
 
+def export_pymc_lift_test(
+    df: pd.DataFrame,
+    *,
+    mmm_channel_name: str | None = None,
+    channel_col: str = "channel",
+    timestamp_col: str = "timestamp",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    freq: str | None = "W-MON",
+    elasticity: float = 0.70,
+    adstock_retention: float = 0.0,
+    min_sigma_rel: float = 0.05,
+) -> pd.DataFrame:
+    """Exports attributed TV spots into a PyMC-Marketing lift test calibration DataFrame.
+
+    Addresses four critical econometric pitfalls when bridging minute-level TV
+    attribution into weekly/daily Bayesian Media Mix Models (``pymc-marketing``):
+      1. **Time-Grain Alignment:** Aggregates spots by ``freq`` (e.g. weekly ``"W-MON"``
+         or daily ``"D"``) so ``delta_x`` and ``delta_y`` match the exact period scale
+         of the MMM's saturation function f(x), avoiding Jensen's inequality distortion.
+      2. **Residual-Based Uncertainty (sigma):** Computes ``sigma`` from spot residuals
+         around the fitted power-law response curve (e_i = l_i - alpha * c_i^beta)
+         rather than raw lift variance, preventing spot-budget variation from inflating
+         measurement error.
+      3. **Direct Spike vs. Adstock Carryover:** Supports ``adstock_retention`` (lambda in [0, 1))
+         to scale immediate direct lift to total steady-state lift: delta_y / (1 - lambda).
+      4. **Target Unit Alignment:** Allows setting ``lift_col="key_event_response"`` when
+         the MMM target is conversions/orders rather than sessions.
+
+    Args:
+        df: DataFrame of attributed spots (from ``analyze_spots``).
+        mmm_channel_name: Optional unified channel name in the MMM (e.g. ``"tv_broadcast"``).
+            If None, preserves individual station names from ``channel_col``.
+        channel_col: Column identifying media channel or station.
+        timestamp_col: Column containing spot airing timestamps for period aggregation.
+        cost_col: Column containing spot media spend.
+        lift_col: Column containing incremental response (e.g. ``"incremental_lift"``
+            for visits or ``"key_event_response"`` for conversions).
+        freq: Pandas offset alias matching the MMM time grain (default: ``"W-MON"`` for
+            weekly MMM; pass ``"D"`` for daily MMM, or ``None`` for ungrouped total).
+        elasticity: Diminishing returns power-law exponent used to strip spend-size
+            variance when estimating residual standard error (default: 0.70).
+        adstock_retention: Geometric adstock decay parameter lambda in [0, 1). Scales
+            direct response by 1 / (1 - lambda) to reflect total cumulative lift (default: 0.0).
+        min_sigma_rel: Minimum relative standard error floor (default: 0.05 = 5% of lift).
+
+    Returns:
+        pd.DataFrame with columns ``["channel", "x", "delta_x", "delta_y", "sigma"]``
+        ready for ``mmm.add_lift_test_measurements(df_lift_test)``.
+    """
+    if lift_col not in df.columns:
+        raise ValueError(f"Lift column '{lift_col}' not found in DataFrame.")
+    if cost_col not in df.columns:
+        raise ValueError(f"Cost column '{cost_col}' not found in DataFrame.")
+    if not (0.0 <= adstock_retention < 1.0):
+        raise ValueError("adstock_retention must be in [0.0, 1.0).")
+
+    if df.empty:
+        return pd.DataFrame(columns=["channel", "x", "delta_x", "delta_y", "sigma"])
+
+    work = df.copy()
+    work["_mmm_ch"] = mmm_channel_name if mmm_channel_name is not None else work[channel_col].astype(str)
+
+    # Step 1: Compute spot-level residuals around channel response curves to isolate noise from spend size
+    work["_residual"] = 0.0
+    for ch, grp in work.groupby("_mmm_ch"):
+        costs = grp[cost_col].to_numpy(dtype=float)
+        lifts = grp[lift_col].to_numpy(dtype=float)
+        pos_mask = costs > 0
+        tot_c = float(np.sum(costs[pos_mask]))
+        tot_l = float(np.sum(lifts[pos_mask]))
+        if tot_c > 0 and tot_l > 0 and len(grp) > 1:
+            # Fit power-law scale alpha on spot level: sum(l) / sum(c^beta)
+            denom = float(np.sum( np.power(costs[pos_mask], elasticity) ))
+            alpha_spot = tot_l / denom if denom > 0 else 0.0
+            pred_lifts = np.where(pos_mask, alpha_spot * np.power(np.maximum(0.0, costs), elasticity), 0.0)
+            work.loc[grp.index, "_residual"] = lifts - pred_lifts
+        else:
+            mean_l = float(np.mean(lifts)) if len(lifts) > 0 else 0.0
+            work.loc[grp.index, "_residual"] = lifts - mean_l
+
+    # Step 2: Group by channel and MMM time period
+    if freq is not None and timestamp_col in work.columns:
+        ts_series = pd.to_datetime(work[timestamp_col], utc=True).dt.tz_localize(None)
+        work["_period"] = ts_series.dt.to_period(freq)
+        group_cols = ["_mmm_ch", "_period"]
+    else:
+        group_cols = ["_mmm_ch"]
+
+    carryover_mult = 1.0 / (1.0 - adstock_retention)
+    rows: list[dict[str, Any]] = []
+
+    for keys, grp in work.groupby(group_cols):
+        ch_name = keys[0] if isinstance(keys, tuple) else keys
+        period_spend = float(grp[cost_col].sum())
+        if period_spend <= 0:
+            continue
+
+        direct_lift = float(grp[lift_col].sum())
+        scaled_lift = direct_lift * carryover_mult
+
+        n_spots = len(grp)
+        if n_spots > 1:
+            res_std = float(np.std(grp["_residual"].to_numpy(dtype=float), ddof=1))
+        else:
+            # Fallback to channel-wide residual std if single spot in period
+            ch_all_res = work.loc[work["_mmm_ch"] == ch_name, "_residual"].to_numpy(dtype=float)
+            res_std = float(np.std(ch_all_res, ddof=1)) if len(ch_all_res) > 1 else abs(direct_lift) * 0.15
+
+        period_se = res_std * (n_spots**0.5) * carryover_mult
+        sigma_floor = max(1e-3, abs(scaled_lift) * min_sigma_rel)
+        sigma = max(period_se, sigma_floor)
+
+        rows.append({
+            "channel": str(ch_name),
+            "x": 0.0,
+            "delta_x": round(period_spend, 2),
+            "delta_y": round(scaled_lift, 2),
+            "sigma": round(sigma, 2),
+        })
+
+    return pd.DataFrame(rows, columns=["channel", "x", "delta_x", "delta_y", "sigma"])
+
+
 def export_mmm_priors(
     df: pd.DataFrame,
     *,
     channel_col: str = "channel",
+    timestamp_col: str = "timestamp",
     cost_col: str = "cost",
     lift_col: str = "incremental_lift",
+    freq: str = "W-MON",
     default_elasticity: float = 0.70,
     elasticity_map: Mapping[str, float] | None = None,
+    adstock_retention: float = 0.0,
 ) -> dict[str, Any]:
     """Exports calibrated channel-level response curves as informative Bayesian priors for Media Mix Models.
 
     Bridges high-frequency tactical spot attribution with holistic macro econometrics.
     Data science teams can inject these empirical priors directly into:
+      - PyMC-Marketing: ``pymc_marketing_lift_test`` (period-aligned DataFrame records)
       - Meta Robyn: ``hyperparameters`` (alpha/gamma saturation)
-      - Google Meridian: ``channel_priors`` (half_saturation, slope)
-      - Recast / Bayesian MMM regressions
+      - Google Meridian: ``channel_priors`` (period-aligned half_saturation, slope)
 
     Args:
         df: DataFrame of attributed spots.
         channel_col: Column identifying media channel or station.
+        timestamp_col: Column containing spot timestamps for period scaling.
         cost_col: Column containing spot media spend.
         lift_col: Column containing attributed incremental lift.
+        freq: MMM period grain (default: ``"W-MON"`` for weekly).
         default_elasticity: Power-law diminishing returns elasticity (default: 0.70).
         elasticity_map: Optional mapping of channel names to custom elasticity parameters.
+        adstock_retention: Geometric adstock decay parameter lambda in [0, 1) (default: 0.0).
 
     Returns:
-        Nested dictionary with generic priors, Meta Robyn hyperparameters,
-        and Google Meridian channel prior specs.
+        Nested dictionary with generic priors, PyMC-Marketing lift test records,
+        Meta Robyn hyperparameters, and Google Meridian channel prior specs.
     """
     curves = calibrate_response_curves(
         df=df,
@@ -525,32 +655,58 @@ def export_mmm_priors(
         elasticity_map=elasticity_map,
     )
 
+    # Determine number of active MMM periods per channel so half-saturation priors match weekly MMM scale
+    period_counts: dict[str, int] = {}
+    if timestamp_col in df.columns and not df.empty:
+        ts_series = pd.to_datetime(df[timestamp_col], utc=True).dt.tz_localize(None)
+        periods = ts_series.dt.to_period(freq)
+        for ch, grp_p in periods.groupby(df[channel_col].astype(str)):
+            period_counts[str(ch)] = max(1, int(grp_p.nunique()))
+
     channels_dict: dict[str, Any] = {}
     robyn_dict: dict[str, Any] = {}
     meridian_dict: dict[str, Any] = {}
 
     for c in curves:
         ch = c.channel
+        n_periods = period_counts.get(ch, 1)
+        mean_period_spend = c.current_spend / n_periods
+        half_sat_period = round(mean_period_spend * 0.85, 2)
+
         channels_dict[ch] = {
             "historical_spend": c.current_spend,
+            "mean_period_spend": round(mean_period_spend, 2),
+            "n_periods": n_periods,
             "historical_lift": c.current_lift,
             "historical_cpiv": c.current_cpiv if c.current_cpiv != float("inf") else None,
             "alpha_scale": c.alpha,
             "elasticity_beta": c.beta,
-            "half_saturation_spend": round(c.current_spend * 0.85, 2),
+            "half_saturation_spend": half_sat_period,
         }
         # Robyn uses Hill saturation parameters (alpha in [0.5, 3.0], gamma in [0.1, 1.0])
         robyn_dict[f"{ch}_alphas"] = [round(max(0.5, min(2.5, c.beta * 2.0)), 2)]
         robyn_dict[f"{ch}_gammas"] = [round(max(0.1, min(1.0, 0.45)), 2)]
 
-        # Meridian uses half_saturation and slope priors
+        # Meridian uses period-aligned half_saturation and slope priors
         meridian_dict[ch] = {
-            "half_saturation_prior": round(c.current_spend * 0.85, 2),
+            "half_saturation_prior": half_sat_period,
             "slope_prior": round(c.beta, 2),
         }
 
+    pymc_df = export_pymc_lift_test(
+        df,
+        channel_col=channel_col,
+        timestamp_col=timestamp_col,
+        cost_col=cost_col,
+        lift_col=lift_col,
+        freq=freq,
+        elasticity=default_elasticity,
+        adstock_retention=adstock_retention,
+    )
+
     return {
         "channels": channels_dict,
+        "pymc_marketing_lift_test": pymc_df.to_dict(orient="records"),
         "meta_robyn_hyperparameters": robyn_dict,
         "google_meridian_priors": meridian_dict,
     }

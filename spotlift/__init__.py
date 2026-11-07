@@ -49,6 +49,7 @@ from spotlift.core.optimizer import (
     ChannelResponseCurve,
     calibrate_response_curves,
     export_mmm_priors,
+    export_pymc_lift_test,
     optimize_budget,
 )
 from spotlift.core.preflight import PreflightCheck, PreflightResult, validate_campaign_inputs
@@ -249,6 +250,7 @@ __all__ = [
     "compute_linear_regression_baseline",
     "estimate_conversion_rate_for_spot",
     "export_mmm_priors",
+    "export_pymc_lift_test",
     "generate_amc_telemetry_sql",
     "generate_dach_benchmark_dataset",
     "generate_ga4_bigquery_sql",

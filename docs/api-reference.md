@@ -84,27 +84,60 @@ spotlift.optimize_budget(
 
 ---
 
+### `spotlift.export_pymc_lift_test()`
+
+Exports SpotLift high-frequency attribution as a `pymc-marketing` lift test calibration DataFrame (`[channel, x, delta_x, delta_y, sigma]`) ready for `MMM.add_lift_test_measurements(df_lift_test)`.
+
+```python
+spotlift.export_pymc_lift_test(
+    df: pd.DataFrame,
+    channel_col: str = "channel",
+    timestamp_col: str = "timestamp",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    freq: Optional[str] = "W-MON",
+    elasticity: float = 0.70,
+    adstock_retention: float = 0.0,
+    mmm_channel_name: Optional[str] = None,
+    min_sigma_rel: float = 0.05,
+) -> pd.DataFrame
+```
+
+#### Parameters
+
+* **`df`** (*pd.DataFrame*): Attributed spots DataFrame from `analyze_spots()`.
+* **`freq`** (*str*, optional, default `"W-MON"`): Pandas period offset matching the target MMM time grain (`"W-MON"` for weekly, `"D"` for daily, or `None` for full-flight total).
+* **`lift_col`** (*str*, default `"incremental_lift"`): Target response column (`"incremental_lift"` for sessions or `"key_event_response"` for conversions).
+* **`adstock_retention`** (*float*, default `0.0`): Geometric adstock retention rate $\lambda \in [0, 1)$ used to scale immediate 8-minute lift to cumulative multi-week impact via $\frac{1}{1 - \lambda}$.
+* **`mmm_channel_name`** (*str*, optional): Optional unified channel name (e.g. `"tv_broadcast"`) to aggregate stations into a single macro MMM media column.
+
+---
+
 ### `spotlift.export_mmm_priors()`
 
-Exports calibrated channel-level response curves as empirical Bayesian priors for Media Mix Modeling (Meta Robyn, Google Meridian, Recast).
+Exports calibrated channel-level response curves as empirical Bayesian priors for Media Mix Modeling (PyMC-Marketing, Meta Robyn, Google Meridian, Recast).
 
 ```python
 spotlift.export_mmm_priors(
     df: pd.DataFrame,
     channel_col: str = "channel",
+    timestamp_col: str = "timestamp",
     cost_col: str = "cost",
     lift_col: str = "incremental_lift",
+    freq: str = "W-MON",
     default_elasticity: float = 0.70,
     elasticity_map: Optional[Mapping[str, float]] = None,
+    adstock_retention: float = 0.0,
 ) -> dict[str, Any]
 ```
 
 #### Returns
 
 * **`dict[str, Any]`**: Dictionary containing:
-  * `"channels"`: Channel-level parameter specs (`historical_spend`, `historical_lift`, `alpha_scale`, `elasticity_beta`, `half_saturation_spend`).
+  * `"channels"`: Channel-level parameter specs (`historical_spend`, `mean_period_spend`, `n_periods`, `historical_lift`, `alpha_scale`, `elasticity_beta`, `half_saturation_spend`).
+  * `"pymc_marketing_lift_test"`: Period-aligned records ready for `pymc-marketing` `MMM.add_lift_test_measurements()`.
   * `"meta_robyn_hyperparameters"`: Pre-formatted dictionary of `alphas` and `gammas` for Meta Robyn.
-  * `"google_meridian_priors"`: Pre-formatted dictionary of `half_saturation_prior` and `slope_prior` for Google Meridian.
+  * `"google_meridian_priors"`: Pre-formatted dictionary of period-scaled `half_saturation_prior` and `slope_prior` for Google Meridian.
 
 ---
 

@@ -169,25 +169,40 @@ To give planning committees defensible options tailored to agency risk tolerance
 
 ---
 
-## 4. The SpotLift ➔ MMM Bridge: Exporting Bayesian Priors
+## 4. The SpotLift ➔ MMM Bridge: Exporting Bayesian Priors & PyMC Lift Tests
 
-One of the greatest challenges in Media Mix Modeling (**Meta Robyn**, **Google Meridian**, **Recast**) is the "cold start" prior problem: data science teams must guess channel saturation shapes and half-decay points.
+One of the greatest challenges in Media Mix Modeling (**PyMC-Marketing**, **Meta Robyn**, **Google Meridian**, **Recast**) is the "cold start" prior problem: data science teams must guess channel saturation shapes and half-decay points, and weekly MMMs often fail to separate linear TV from seasonal organic baselines.
 
-SpotLift bridges tactical high-frequency TV attribution directly to executive macro MMM by exporting calibrated response curves as empirical Bayesian priors:
+SpotLift bridges tactical high-frequency TV attribution directly to executive macro MMM with two econometric exporters that avoid common statistical pitfalls:
+
+1. **Period-Grain Alignment (`freq="W-MON"`):** Avoids Jensen's Inequality distortion ($f(\sum x_t) \neq \sum f(x_t)$) by aggregating spot lifts to the exact time grain of the target MMM (`W-MON` for weekly or `D` for daily) rather than summing an entire multi-week flight into a single observation.
+2. **Residual-Based Uncertainty ($\sigma$):** Strips out planned spot-budget variation (e.g., €500 daytime vs. €10,000 prime-time spots) by fitting within-channel response curves first and computing $\sigma_t = \sqrt{N_t} \cdot \text{std}(e_j)$ from the *spot-level residuals* $e_j = l_j - \hat{l}_j$.
+3. **Adstock Carryover Scaling (`adstock_retention`):** Prevents downward bias when calibrating an MMM with multi-week adstock (`GeometricAdstock`) against an 8-minute direct spike by scaling immediate lift by $\frac{1}{1 - \lambda}$.
+4. **Broadcaster Rollup (`mmm_channel_name`):** Resolves cross-station multicollinearity in weekly MMMs by optionally pooling station-level observations into a unified `tv_broadcast` channel while retaining station disaggregation inside SpotLift.
 
 ```python
 import spotlift as sl
 
-# Extract empirical response curves and export framework-ready priors
-mmm_priors = sl.export_mmm_priors(attributed_spots, default_elasticity=0.70)
+# 1. Export period-aligned lift test DataFrame for PyMC-Marketing
+df_lift_test = sl.export_pymc_lift_test(
+    attributed_spots,
+    freq="W-MON",                  # Match weekly MMM time grain
+    lift_col="key_event_response", # Match MMM target metric (conversions vs. sessions)
+    adstock_retention=0.35,        # Account for multi-week brand carryover (lambda = 0.35)
+    mmm_channel_name="tv_broadcast",
+)
+# Output columns: ['channel', 'x', 'delta_x', 'delta_y', 'sigma']
+# Pass directly into PyMC-Marketing:
+# mmm.add_lift_test_measurements(df_lift_test)
 
-# 1. Meta Robyn Hyperparameters
+# 2. Export multi-framework MMM priors (PyMC-Marketing, Meta Robyn, Google Meridian)
+mmm_priors = sl.export_mmm_priors(attributed_spots, freq="W-MON", default_elasticity=0.70)
+
 print(mmm_priors["meta_robyn_hyperparameters"])
 # Output: {'RTL_alphas': [1.4], 'RTL_gammas': [0.45], 'Joyn_alphas': [1.4], ...}
 
-# 2. Google Meridian Priors
 print(mmm_priors["google_meridian_priors"])
-# Output: {'RTL': {'half_saturation_prior': 161500.0, 'slope_prior': 0.7}, ...}
+# Output: {'RTL': {'half_saturation_prior': 40375.0, 'slope_prior': 0.7}, ...}
 ```
 
 This transforms SpotLift from an isolated attribution tool into the **ground-truth feeder** for your enterprise econometrics stack.

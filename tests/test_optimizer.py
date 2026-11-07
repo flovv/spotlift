@@ -138,6 +138,7 @@ def test_export_mmm_priors(sample_attribution_df: pd.DataFrame) -> None:
 
     priors = export_mmm_priors(sample_attribution_df, default_elasticity=0.72)
     assert "channels" in priors
+    assert "pymc_marketing_lift_test" in priors
     assert "meta_robyn_hyperparameters" in priors
     assert "google_meridian_priors" in priors
 
@@ -150,6 +151,50 @@ def test_export_mmm_priors(sample_attribution_df: pd.DataFrame) -> None:
     assert "RTL_alphas" in priors["meta_robyn_hyperparameters"]
     assert "RTL" in priors["google_meridian_priors"]
     assert priors["google_meridian_priors"]["RTL"]["slope_prior"] == 0.72
+
+
+def test_export_pymc_lift_test_grain_and_residuals() -> None:
+    from spotlift.core.optimizer import export_pymc_lift_test
+
+    # Create a 2-week campaign with wildly different spot costs (500 vs 8000)
+    # that follow an exact power-law curve (zero residual noise)
+    rows = []
+    for week_offset, date_str in [(0, "2026-03-02T18:00:00Z"), (1, "2026-03-09T18:00:00Z")]:
+        for cost in [500.0, 2000.0, 8000.0]:
+            lift = 2.5 * (cost**0.70)
+            rows.append({
+                "channel": "RTL",
+                "timestamp": date_str,
+                "cost": cost,
+                "incremental_lift": lift,
+                "key_event_response": lift * 0.03,
+            })
+
+    df = pd.DataFrame(rows)
+
+    # 1. Weekly grain should produce 2 rows (one per week), each with weekly spend = 10,500
+    lift_df = export_pymc_lift_test(df, freq="W-MON", elasticity=0.70)
+    assert list(lift_df.columns) == ["channel", "x", "delta_x", "delta_y", "sigma"]
+    assert len(lift_df) == 2
+    assert lift_df["delta_x"].iloc[0] == pytest.approx(10500.0)
+
+    # Because spots follow the power-law curve exactly, residual std is ~0,
+    # so sigma hits the 5% minimum relative floor rather than exploding from cost variance!
+    expected_floor = lift_df["delta_y"].iloc[0] * 0.05
+    assert lift_df["sigma"].iloc[0] == pytest.approx(expected_floor, rel=1e-2)
+
+    # 2. Test adstock_retention carryover scaling and conversion target column
+    conv_df = export_pymc_lift_test(
+        df,
+        mmm_channel_name="tv_total",
+        lift_col="key_event_response",
+        freq="W-MON",
+        adstock_retention=0.50,
+    )
+    assert (conv_df["channel"] == "tv_total").all()
+    # With 0.50 retention, cumulative steady-state lift is 2x direct conversion lift
+    direct_week_convs = df["key_event_response"].sum() / 2.0
+    assert conv_df["delta_y"].iloc[0] == pytest.approx(direct_week_convs * 2.0, rel=1e-2)
 
 
 def test_cli_optimize(tmp_path) -> None:

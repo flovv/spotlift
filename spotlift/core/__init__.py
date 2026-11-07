@@ -8,6 +8,7 @@ from spotlift.core.optimizer import (
     ChannelResponseCurve,
     calibrate_response_curves,
     export_mmm_priors,
+    export_pymc_lift_test,
     optimize_budget,
 )
 from spotlift.core.overlap import detect_collision_clusters, print_diagnostic_banner
@@ -32,6 +33,7 @@ __all__ = [
     "compute_diurnal_baseline",
     "detect_collision_clusters",
     "export_mmm_priors",
+    "export_pymc_lift_test",
     "integrate_isolated_spot",
     "integrate_isolated_spots_batch",
     "integrate_proportional_fallback",
