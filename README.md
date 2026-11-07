@@ -361,7 +361,13 @@ spotlift run --spots my_schaltplan.csv --web my_ga4_sessions.csv --tz Europe/Ber
 spotlift sql --source ga4 --project my-gcp-project --dataset analytics_12345 --out ./ga4_extract.sql
 spotlift sql --source amc --start 2026-03-01 --end 2026-03-21 --out ./amc_extract.sql
 
-# 5. Authenticate Pro license key
+# 5. Solve constrained portfolio budget reallocation
+spotlift optimize --spots ./attributed_spots.csv --budget 500000 --max-shift 0.35 --scenarios
+
+# 6. Export period-aligned MMM calibration data (PyMC, Meridian, Robyn)
+spotlift mmm --spots ./attributed_spots.csv --target all --freq W-MON --out-dir ./mmm_export
+
+# 7. Authenticate Pro license key
 spotlift auth --key SL_PRO_xxxxxxxxxxxx
 ```
 

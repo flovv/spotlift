@@ -19,6 +19,9 @@ spotlift run --spots schaltplan.csv --web ga4_minutes.parquet --out results.csv
 # Solve constrained budget reallocation with diminishing returns
 spotlift optimize --spots results.csv --budget 500000 --max-shift 0.35 --scenarios
 
+# Export period-aligned MMM calibration data (PyMC, Meridian, Robyn)
+spotlift mmm --spots results.csv --target all --out-dir ./mmm_export
+
 # Generate BigQuery GA4 or Amazon Marketing Cloud (AMC) extraction SQL
 spotlift sql --source ga4 --project my-gcp-project --dataset analytics_12345
 spotlift sql --source amc --start 2026-03-01 --end 2026-03-21
@@ -116,8 +119,42 @@ spotlift optimize \
 | `--max-shift`, `-m` | Float | `0.35` | Maximum relative budget reallocation allowed per channel ($\pm 35\%$). |
 | `--elasticity`, `-e` | Float | `0.70` | Diminishing returns elasticity parameter $\beta$ ($0 < \beta < 1$). |
 | `--scenarios` | Flag | `false` | Displays multi-scenario comparison (Conservative, Balanced, Aggressive). |
+| `--export-mmm` | Path | `None` | Optional directory to export period-aligned PyMC lift test calibration data alongside recommendations. |
 | `--json` | Flag | `false` | Outputs machine-readable JSON summary for AI coding agents. |
 | `--out`, `-o` | Path | `None` | Destination path to export recommended budget CSV. |
+
+---
+
+### `spotlift mmm`
+
+Exports period-aligned calibration datasets and Bayesian priors for **PyMC-Marketing**, **Google Meridian**, and **Meta Robyn** to anchor macro saturation curves from high-frequency TV lift.
+
+```bash
+# Export PyMC-Marketing lift test calibration (weekly W-MON grain)
+spotlift mmm --spots attributed_spots.csv --target pymc --out-dir ./mmm_export
+
+# Export all frameworks with adstock carryover scaling and station pooling
+spotlift mmm \
+  --spots attributed_spots.csv \
+  --target all \
+  --freq W-MON \
+  --adstock-retention 0.35 \
+  --mmm-channel-name tv_broadcast \
+  --out-dir ./mmm_export
+```
+
+| Flag | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--spots`, `-s` | Path | *Required* | Path to attributed spots CSV/Parquet (or raw airings if `--web` is provided). |
+| `--web`, `-w` | Path | `None` | Optional GA4 telemetry path if spots file is not yet attributed. |
+| `--target`, `-t` | String | `pymc` | Target MMM framework: `pymc`, `meridian`, `robyn`, or `all`. |
+| `--out-dir`, `-o` | Path | `./mmm_export` | Destination folder for calibration files and prior specs. |
+| `--freq`, `-f` | String | `W-MON` | MMM time period frequency (`W-MON` for weekly or `D` for daily). |
+| `--lift-col`, `-l` | String | `incremental_lift` | Lift metric (`incremental_lift` for sessions or `key_event_response` for conversions). |
+| `--adstock-retention`, `-a`| Float | `0.0` | Geometric adstock retention rate $\lambda \in [0, 1)$ to scale immediate spike to total steady-state lift. |
+| `--mmm-channel-name` | String | `None` | Optional unified TV media column name (e.g. `tv_broadcast`) to pool collinear stations. |
+| `--key`, `-k` | String | `None` | SpotLift Pro key (for turnkey Meridian ModelSpec YAML & Robyn R scripts). |
+| `--json` | Flag | `false` | Outputs machine-readable JSON summary for CI/CD pipelines. |
 
 ---
 

@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import typer
@@ -452,6 +453,11 @@ def optimize(
     out: Path | None = typer.Option(None, "--out", "-o", help="Optional path to export optimized recommendations CSV."),
     json_output: bool = typer.Option(False, "--json", help="Output machine-readable JSON summary for AI coding agents and pipelines."),
     scenarios: bool = typer.Option(False, "--scenarios", help="Display multi-scenario comparison (Conservative, Balanced, Aggressive)."),
+    export_mmm: Path | None = typer.Option(
+        None,
+        "--export-mmm",
+        help="Optional directory path to export period-aligned PyMC lift test calibration data alongside optimization.",
+    ),
     tz: str = typer.Option("UTC", "--tz", "-z", help="Timezone if raw airings are provided."),
 ) -> None:
     """Solves constrained budget reallocation using diminishing returns response curves and marginal CPIV."""
@@ -508,6 +514,208 @@ def optimize(
         out.parent.mkdir(parents=True, exist_ok=True)
         opt_res.recommendations.to_csv(out, index=False)
         console.print(f"[green]✔ Saved optimized recommendations to:[/] {out}")
+
+    if export_mmm:
+        export_mmm.mkdir(parents=True, exist_ok=True)
+        ts_col = "timestamp" if "timestamp" in df.columns else None
+        pymc_df = sl.export_pymc_lift_test(
+            df,
+            channel_col=channel_col,
+            cost_col=cost_col,
+            lift_col=lift_col,
+            timestamp_col=ts_col or "timestamp",
+            elasticity=elasticity,
+        )
+        pymc_out = export_mmm / "pymc_lift_test.csv"
+        pymc_df.to_csv(pymc_out, index=False)
+        console.print(f"[green]✔ Saved PyMC MMM lift test calibration to:[/] {pymc_out}")
+
+
+@app.command()
+def mmm(
+    spots: Path = typer.Option(..., "--spots", "-s", help="Path to attributed spots CSV/Parquet (or airings file if --web is provided)."),
+    web: Path | None = typer.Option(None, "--web", "-w", help="Optional GA4 telemetry path if spots file is not yet attributed."),
+    target: str = typer.Option("pymc", "--target", "-t", help="Target MMM framework: 'pymc', 'meridian', 'robyn', or 'all'."),
+    out_dir: Path = typer.Option(Path("./mmm_export"), "--out-dir", "-o", help="Directory path to export calibration files."),
+    freq: str = typer.Option("W-MON", "--freq", "-f", help="MMM period frequency: 'W-MON' (weekly) or 'D' (daily)."),
+    lift_col: str = typer.Option("incremental_lift", "--lift-col", "-l", help="Incremental lift column ('incremental_lift' or 'key_event_response')."),
+    cost_col: str = typer.Option("cost", "--cost-col", "-c", help="Spot media cost column."),
+    channel_col: str = typer.Option("channel", "--channel-col", help="Column name identifying media channel/station."),
+    timestamp_col: str = typer.Option("timestamp", "--timestamp-col", help="Column name containing spot timestamps."),
+    elasticity: float = typer.Option(0.70, "--elasticity", "-e", help="Diminishing returns elasticity beta parameter."),
+    adstock_retention: float = typer.Option(0.0, "--adstock-retention", "-a", help="Geometric adstock retention lambda in [0, 1) to scale immediate spike to total cumulative lift."),
+    mmm_channel_name: str | None = typer.Option(None, "--mmm-channel-name", help="Optional unified TV channel name (e.g. 'tv_broadcast') to pool stations."),
+    api_key: str | None = typer.Option(None, "--key", "-k", help="SpotLift Pro license key (for Meridian and Robyn turnkey exports)."),
+    json_output: bool = typer.Option(False, "--json", help="Output machine-readable JSON summary for AI coding agents and pipelines."),
+    tz: str = typer.Option("UTC", "--tz", "-z", help="Timezone if raw airings are provided."),
+) -> None:
+    """Exports period-aligned calibration datasets and Bayesian priors for PyMC-Marketing, Google Meridian, and Meta Robyn."""
+    target_clean = target.lower().strip()
+    valid_targets = {"pymc", "meridian", "robyn", "all"}
+    if target_clean not in valid_targets:
+        console.print(f"[bold red]Invalid target '{target}'. Must be one of: {', '.join(sorted(valid_targets))}[/bold red]")
+        raise typer.Exit(code=1)
+
+    if not (0.0 <= adstock_retention < 1.0):
+        console.print(f"[bold red]adstock-retention must be in [0.0, 1.0), got {adstock_retention}[/bold red]")
+        raise typer.Exit(code=1)
+
+    if spots.suffix.lower() in [".parquet", ".pq"]:
+        df = pd.read_parquet(spots)
+    else:
+        df = pd.read_csv(spots)
+
+    if lift_col not in df.columns:
+        if web is None:
+            console.print(f"[bold red]Column '{lift_col}' not found in spots file. Please provide --web to run attribution first.[/bold red]")
+            raise typer.Exit(code=1)
+        console.print("[dim]Running attribution pass prior to MMM export...[/dim]")
+        airings_df = sl.load_airings(spots, tz=tz)
+        web_df = sl.load_telemetry(web, tz=tz)
+        df = sl.analyze_spots(airings=airings_df, web_telemetry=web_df)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    generated_deliverables: list[tuple[str, Path, str]] = []
+    json_summary: dict[str, Any] = {
+        "target": target_clean,
+        "freq": freq,
+        "out_dir": str(out_dir),
+        "total_spend": float(df[cost_col].sum()) if cost_col in df.columns else 0.0,
+        "total_direct_lift": float(df[lift_col].sum()) if lift_col in df.columns else 0.0,
+        "files": {},
+    }
+
+    # 1. PyMC-Marketing / Generic Priors
+    if target_clean in ("pymc", "all"):
+        pymc_df = sl.export_pymc_lift_test(
+            df,
+            mmm_channel_name=mmm_channel_name,
+            channel_col=channel_col,
+            timestamp_col=timestamp_col,
+            cost_col=cost_col,
+            lift_col=lift_col,
+            freq=freq,
+            elasticity=elasticity,
+            adstock_retention=adstock_retention,
+        )
+        pymc_path = out_dir / "pymc_lift_test.csv"
+        pymc_df.to_csv(pymc_path, index=False)
+        generated_deliverables.append(("PyMC-Marketing Lift Test", pymc_path, f"{len(pymc_df)} calibration periods"))
+        json_summary["files"]["pymc_lift_test"] = str(pymc_path)
+
+        mmm_priors = sl.export_mmm_priors(
+            df,
+            channel_col=channel_col,
+            timestamp_col=timestamp_col,
+            cost_col=cost_col,
+            lift_col=lift_col,
+            freq=freq,
+            default_elasticity=elasticity,
+            adstock_retention=adstock_retention,
+        )
+        priors_path = out_dir / "mmm_priors.json"
+        priors_path.write_text(json.dumps(mmm_priors, indent=2), encoding="utf-8")
+        generated_deliverables.append(("Multi-Framework Priors JSON", priors_path, "Robyn + Meridian + PyMC"))
+        json_summary["files"]["mmm_priors"] = str(priors_path)
+        json_summary["priors"] = mmm_priors
+
+    # 2. Google Meridian
+    if target_clean in ("meridian", "all"):
+        effective_key = api_key or os.getenv("SPOTLIFT_API_KEY")
+        if is_pro_available() and effective_key:
+            meridian_pack = sl.export_meridian_package(
+                spots_df=df,
+                api_key=effective_key,
+                channel_col=channel_col,
+                timestamp_col=timestamp_col,
+                cost_col=cost_col,
+                lift_col=lift_col,
+                freq=freq,
+                elasticity=elasticity,
+                adstock_retention=adstock_retention,
+                mmm_channel_name=mmm_channel_name,
+                output_dir=out_dir,
+            )
+            calib_file = out_dir / "calibration_data.csv"
+            spec_file = out_dir / "meridian_model_spec.yaml"
+            generated_deliverables.append(("Google Meridian Calibration Data (Pro)", calib_file, f"{len(meridian_pack['calibration_df'])} periods"))
+            generated_deliverables.append(("Google Meridian ModelSpec YAML (Pro)", spec_file, "LogNormal Hill Priors"))
+            json_summary["files"]["meridian_calibration_data"] = str(calib_file)
+            json_summary["files"]["meridian_model_spec"] = str(spec_file)
+        else:
+            if "mmm_priors" not in locals():
+                mmm_priors = sl.export_mmm_priors(
+                    df,
+                    channel_col=channel_col,
+                    timestamp_col=timestamp_col,
+                    cost_col=cost_col,
+                    lift_col=lift_col,
+                    freq=freq,
+                    default_elasticity=elasticity,
+                    adstock_retention=adstock_retention,
+                )
+            meridian_priors = mmm_priors["google_meridian_priors"]
+            meridian_path = out_dir / "meridian_priors.json"
+            meridian_path.write_text(json.dumps(meridian_priors, indent=2), encoding="utf-8")
+            generated_deliverables.append(("Google Meridian Hill Priors (Open-Core)", meridian_path, "half_saturation + slope"))
+            json_summary["files"]["meridian_priors"] = str(meridian_path)
+            if not json_output:
+                console.print("[dim]Tip: Activate SpotLift Pro (`spotlift auth --key ...`) to export turnkey Meridian calibration_data.csv & ModelSpec YAML.[/dim]")
+
+    # 3. Meta Robyn
+    if target_clean in ("robyn", "all"):
+        effective_key = api_key or os.getenv("SPOTLIFT_API_KEY")
+        if is_pro_available() and effective_key:
+            robyn_pack = sl.export_robyn_package(
+                spots_df=df,
+                api_key=effective_key,
+                channel_col=channel_col,
+                timestamp_col=timestamp_col,
+                cost_col=cost_col,
+                lift_col=lift_col,
+                freq=freq,
+                elasticity=elasticity,
+                adstock_retention=adstock_retention,
+                mmm_channel_name=mmm_channel_name,
+                output_dir=out_dir,
+            )
+            robyn_csv = out_dir / "calibration_input.csv"
+            robyn_r = out_dir / "run_robyn_calibration.R"
+            generated_deliverables.append(("Meta Robyn Calibration Input (Pro)", robyn_csv, f"{len(robyn_pack['calibration_df'])} periods"))
+            generated_deliverables.append(("Meta Robyn Calibration R Script (Pro)", robyn_r, "Turnkey R Execution Script"))
+            json_summary["files"]["robyn_calibration_input"] = str(robyn_csv)
+            json_summary["files"]["robyn_r_script"] = str(robyn_r)
+        else:
+            if "mmm_priors" not in locals():
+                mmm_priors = sl.export_mmm_priors(
+                    df,
+                    channel_col=channel_col,
+                    timestamp_col=timestamp_col,
+                    cost_col=cost_col,
+                    lift_col=lift_col,
+                    freq=freq,
+                    default_elasticity=elasticity,
+                    adstock_retention=adstock_retention,
+                )
+            robyn_priors = mmm_priors["meta_robyn_hyperparameters"]
+            robyn_path = out_dir / "robyn_hyperparameters.json"
+            robyn_path.write_text(json.dumps(robyn_priors, indent=2), encoding="utf-8")
+            generated_deliverables.append(("Meta Robyn Hyperparameters (Open-Core)", robyn_path, "alphas + gammas"))
+            json_summary["files"]["robyn_hyperparameters"] = str(robyn_path)
+            if not json_output:
+                console.print("[dim]Tip: Activate SpotLift Pro (`spotlift auth --key ...`) to export turnkey Robyn calibration_input.csv & run_robyn_calibration.R.[/dim]")
+
+    if json_output:
+        print(json.dumps(json_summary, indent=2))
+    else:
+        table = Table(title=f"SpotLift MMM Calibration Exporter (Target: {target_clean.upper()})")
+        table.add_column("Deliverable", style="cyan", no_wrap=True)
+        table.add_column("File Path", style="green")
+        table.add_column("Details", style="dim")
+        for deliv, pth, details in generated_deliverables:
+            table.add_row(deliv, str(pth), details)
+        console.print(table)
+        console.print(f"\n[green]✔ All {target_clean.upper()} calibration deliverables successfully saved to:[/] {out_dir}\n")
 
 
 if __name__ == "__main__":

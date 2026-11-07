@@ -178,3 +178,98 @@ def test_cli_validate_and_markdown_summary(tmp_path: Path):
     assert "SpotLift Post-Buy Attribution Summary" in md_text
     assert "Station & Channel Performance Ranking" in md_text
 
+
+def test_cli_optimize_export_mmm(tmp_path: Path):
+    import pandas as pd
+    test_csv = tmp_path / "attributed.csv"
+    df = pd.DataFrame([
+        {"channel": "RTL", "timestamp": "2026-03-02 20:15:00", "cost": 50000.0, "incremental_lift": 4000.0},
+        {"channel": "Joyn", "timestamp": "2026-03-02 20:20:00", "cost": 20000.0, "incremental_lift": 3000.0},
+    ])
+    df.to_csv(test_csv, index=False)
+
+    mmm_out = tmp_path / "mmm_from_opt"
+    res = runner.invoke(app, ["optimize", "--spots", str(test_csv), "--export-mmm", str(mmm_out)])
+    assert res.exit_code == 0
+    assert (mmm_out / "pymc_lift_test.csv").exists()
+    assert "Saved PyMC MMM lift test calibration to" in res.output
+
+
+def test_cli_mmm_subcommand_all_and_json(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("SPOTLIFT_API_KEY", raising=False)
+    import json
+
+    import pandas as pd
+
+    test_csv = tmp_path / "attributed_spots.csv"
+    df = pd.DataFrame([
+        {"channel": "RTL", "timestamp": "2026-03-02 20:15:00", "cost": 30000.0, "incremental_lift": 2500.0},
+        {"channel": "VOX", "timestamp": "2026-03-02 21:00:00", "cost": 15000.0, "incremental_lift": 1200.0},
+        {"channel": "RTL", "timestamp": "2026-03-09 20:15:00", "cost": 35000.0, "incremental_lift": 2700.0},
+    ])
+    df.to_csv(test_csv, index=False)
+
+    # 1. Test pymc target
+    pymc_dir = tmp_path / "export_pymc"
+    res_pymc = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "pymc", "--out-dir", str(pymc_dir)])
+    assert res_pymc.exit_code == 0
+    assert (pymc_dir / "pymc_lift_test.csv").exists()
+    assert (pymc_dir / "mmm_priors.json").exists()
+    assert "PyMC-Marketing Lift Test" in res_pymc.output
+
+    # 2. Test meridian target (open-core JSON fallback)
+    meridian_dir = tmp_path / "export_meridian"
+    res_meridian = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "meridian", "--out-dir", str(meridian_dir)])
+    assert res_meridian.exit_code == 0
+    assert (meridian_dir / "meridian_priors.json").exists()
+
+    # 3. Test robyn target (open-core JSON fallback)
+    robyn_dir = tmp_path / "export_robyn"
+    res_robyn = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "robyn", "--out-dir", str(robyn_dir)])
+    assert res_robyn.exit_code == 0
+    assert (robyn_dir / "robyn_hyperparameters.json").exists()
+
+    # 4. Test target all with JSON output
+    all_dir = tmp_path / "export_all"
+    res_all = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "all", "--out-dir", str(all_dir), "--json"])
+    assert res_all.exit_code == 0
+    data = json.loads(res_all.output)
+    assert data["target"] == "all"
+    assert "pymc_lift_test" in data["files"]
+    assert "meridian_priors" in data["files"]
+    assert "robyn_hyperparameters" in data["files"]
+
+    # 5. Test invalid target raises code 1
+    res_invalid = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "nonexistent"])
+    assert res_invalid.exit_code == 1
+    assert "Invalid target" in res_invalid.output
+
+
+@pytest.mark.skipif(
+    not is_pro_available(),
+    reason="Requires spotlift_pro compiled binary (proprietary extension)",
+)
+def test_cli_mmm_pro_turnkey(tmp_path: Path):
+    import pandas as pd
+
+    test_csv = tmp_path / "attributed_spots.csv"
+    df = pd.DataFrame([
+        {"channel": "RTL", "timestamp": "2026-03-02 20:15:00", "cost": 30000.0, "incremental_lift": 2500.0},
+        {"channel": "VOX", "timestamp": "2026-03-02 21:00:00", "cost": 15000.0, "incremental_lift": 1200.0},
+    ])
+    df.to_csv(test_csv, index=False)
+
+    pro_dir = tmp_path / "mmm_pro_out"
+    res = runner.invoke(
+        app,
+        ["mmm", "--spots", str(test_csv), "--target", "all", "--key", "SL_TEST_KEY_LOCAL", "--out-dir", str(pro_dir)],
+    )
+    assert res.exit_code == 0
+    assert (pro_dir / "pymc_lift_test.csv").exists()
+    assert (pro_dir / "calibration_data.csv").exists()
+    assert (pro_dir / "meridian_model_spec.yaml").exists()
+    assert (pro_dir / "calibration_input.csv").exists()
+    assert (pro_dir / "run_robyn_calibration.R").exists()
+
+
+
