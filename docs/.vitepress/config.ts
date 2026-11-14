@@ -35,6 +35,7 @@ export default defineConfig({
       { text: 'Use Cases', link: '/use-cases/' },
       { text: 'Methodology', link: '/methodology' },
       { text: 'Integrations', items: [
+        { text: 'Two-Way MMM Bridge', link: '/mmm' },
         { text: 'GA4 & BigQuery SQL', link: '/ga4-bigquery' },
         { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
         { text: 'Amazon AMC (Pro)', link: '/amazon-amc' },
@@ -69,8 +70,9 @@ export default defineConfig({
         text: 'Econometric Methodology',
         items: [
           { text: 'Core Econometrics & Baseline', link: '/methodology' },
+          { text: 'Two-Way MMM Integration', link: '/mmm' },
           { text: 'Conversion-Rate Bridge', link: '/conversion-rate-bridge' },
-          { text: 'Budget Portfolio Optimizer', link: '/optimizer' },
+          { text: 'Budget & MMM Optimizer', link: '/optimizer' },
           { text: 'vs. Competitors (EDO, TVSquared, Recast)', link: '/vs-tvsquared' },
         ]
       },

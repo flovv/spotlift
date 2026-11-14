@@ -6,17 +6,17 @@ A formal mathematical overview of the econometric models and algorithms powering
 
 ## 1. High-Frequency Impulse Attribution vs. MMM
 
-Linear television attribution operates on two distinct analytical horizons:
+Linear television attribution operates on two complementary analytical horizons:
 
-1. **Macro Econometrics (Media Mix Modeling / MMM):** Solves long-term adstock carryover, baseline sales, diminishing returns, and macro seasonality using weekly or monthly aggregated regressions (Bayesian MMM, Robyn, Meridian).
-2. **High-Frequency Temporal Attribution (SpotLift):** Measures the immediate, unconfounded impulse response on digital telemetry in the seconds and minutes directly following a broadcast airing.
+1. **Macro Econometrics (Media Mix Modeling / MMM):** Solves long-term adstock carryover, baseline sales, diminishing returns, and macro seasonality using weekly or monthly aggregated regressions (PyMC-Marketing, Robyn, Meridian).
+2. **High-Frequency Temporal Attribution (SpotLift):** Measures the immediate, unconfounded impulse response on digital telemetry directly following a broadcast airing — isolating individual stations, dayparts, and creatives.
 
-SpotLift focuses exclusively on high-frequency temporal attribution, delivering spot-by-spot precision for creative testing, station selection, daypart optimization, and immediate conversion response.
+High-frequency impulse response is causally sharp locally, but systematically **under-reports** total long-term TV contribution; weekly MMM captures total saturation and carryover, but cannot separate 60+ collinear TV stations. SpotLift connects both via a **[Two-Way MMM Bridge](/mmm)**: exporting immediate lift as a **causal lower bound** (or latent immediate-share likelihood) to calibrate the MMM, and feeding macro MMM posteriors back into [`optimize_tv_with_mmm`](/optimizer) and `disaggregate_mmm_contributions`.
 
 ```
-Broadcast Airing (t0) ──► Immediate Spike [t0, t0 + W) ──► Diurnal Decay
-                                ▲
-                          Baseline (Bt)
+Broadcast Airing (t0) ──► Immediate Spike [t0, t0 + W) ──► Causal Lower Bound ──► Macro MMM
+                                ▲                                                     │
+                          Baseline (Bt)    MMM-Anchored Station Optimization ◄────────┘
 ```
 
 ---

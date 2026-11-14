@@ -10,8 +10,8 @@ hero:
       text: Get Started (5 Min)
       link: /quickstart
     - theme: alt
-      text: Real-World Use Cases
-      link: /use-cases/
+      text: Two-Way MMM Bridge
+      link: /mmm
     - theme: alt
       text: Econometric Methodology
       link: /methodology
@@ -68,8 +68,13 @@ results = spotlift.analyze_spots(
     collision_attribution="weighted_share"
 )
 
-# 3. Solve constrained portfolio reallocation
+# 3. Direction 1 (SpotLift -> MMM): Export causal lower bounds (no silent 1/(1-lambda) inflation)
+evidence = spotlift.export_causal_lower_bound(results, mmm_channel_name="tv_broadcast")
+
+# 4. Direction 2 (MMM -> SpotLift): Optimize station budgets anchored to macro MMM posteriors
 reallocation = spotlift.optimize_budget(results, max_shift=0.35)
+# Or pass MMM contributions directly:
+# reallocation = spotlift.optimize_tv_with_mmm(results, mmm_results="mmm_posterior.csv", risk_aversion=0.25)
 reallocation.print_summary()
 ```
 
@@ -81,6 +86,7 @@ reallocation.print_summary()
 | :--- | :--- | :--- |
 | **Pricing & Contract** | €3,000 – €6,000+ / month (12-mo minimum) | **Free Open-Core** / **€249** Single Pass / Pro Sub |
 | **Data Privacy (GDPR)** | Raw customer data uploaded to external vendor | **100% On-Prem / Local:** Telemetry never leaves your VPC |
+| **Two-Way MMM Integration** | ❌ Siloed portal, no MMM calibration | ✅ **Causal lower bounds / latent share → PyMC/Meridian/Robyn, & MMM-anchored optimization** |
 | **Amazon Telemetry** | ❌ Blind to Amazon retail halo | ✅ **Native AMC Clean Room & PPC Cannibalization Audit** |
 | **Prime-Time Overlaps** | Heuristic black-box proportionality | ✅ **Shifted-Gamma EM Deconvolution with GRP Priors** |
 | **Automation** | Rigid web portal, manual CSV downloads | ✅ **Automated via Python, Airflow, dbt, BigQuery, Snowflake** |

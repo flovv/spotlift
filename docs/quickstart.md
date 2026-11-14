@@ -150,6 +150,8 @@ The output DataFrame contains enriched spot-level attribution records:
 
 ## 7. Next Steps
 
+* Bridge tactical attribution with macro econometrics in the [Two-Way MMM Integration Guide](/mmm).
+* Run risk-aware station reallocation via [Budget & MMM Optimization](/optimizer).
 * Explore [Real-World Use Cases & Decision Playbooks](/use-cases/) for Performance Agencies, DTC E-Commerce, and Amazon-First Brands.
 * Deep dive into the [Econometric Methodology](/methodology) to understand baseline detrending and collision mathematics.
 * Set up automated daily exports with [GA4 & BigQuery SQL](/ga4-bigquery).

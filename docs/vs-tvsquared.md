@@ -15,7 +15,8 @@ A technical, economic, and architectural comparison of **SpotLift** against lega
 | **Paid Brand PPC Cannibalization** | ✅ **Mathematically audits Sponsored Brands tax** | ❌ None | ❌ None | ❌ None | ❌ None | ❌ None |
 | **Signed Residuals (No Noise Bias)** | ✅ **Preserved (`clip_negative=False`)** | ❌ Clamped to 0 (Upward Bias) | ❌ Clamped to 0 (Upward Bias) | ⚠️ N/A (Indexed Search Ratio) | ❌ Clamped to 0 (Upward Bias) | ✅ Signed residuals preserved |
 | **Prime-Time Spot Collisions** | ✅ **Shifted-Gamma EM Deconvolution** | Opaque proprietary heuristic | Proportional / station-weight split | Syndicated single-spot indexing | ACR-derived household matching | ⚠️ Coarse weekly aggregation |
-| **Budget Portfolio Optimization** | ✅ **Constrained KKT Marginal Optimizer (`mCPIV`)** | ❌ Naive average CPV sorting | ❌ Naive average CPV sorting | ❌ Benchmark indexing only | ❌ Naive average CPV sorting | ✅ Budget curve solver (Macro-level) |
+| **Budget Portfolio Optimization** | ✅ **Constrained KKT Marginal Optimizer (`mCPIV` + MMM draws)** | ❌ Naive average CPV sorting | ❌ Naive average CPV sorting | ❌ Benchmark indexing only | ❌ Naive average CPV sorting | ✅ Budget curve solver (Macro-level) |
+| **Two-Way MMM Integration** | ✅ **Causal lower bounds → MMM & MMM-anchored station optimizer** | ❌ None (isolated portal) | ❌ None (isolated portal) | ❌ None | ❌ None | ⚠️ Macro channel-level only |
 | **Tactical Schedule Optimization** | ✅ **Spot, daypart & creative-level** | ✅ Spot-level | ✅ Spot-level | ✅ Spot-level | ✅ Spot-level | ❌ Macro channel-level only |
 | **Data Privacy & GDPR** | ✅ **Zero 3rd-party tags; 100% inside your VPC** | ❌ 3rd-party JavaScript tracker on `brand.com` | ❌ 3rd-party JavaScript tracker on `brand.com` | ✅ Privacy-safe (Syndicated outside-in) | ❌ 3rd-party tracking tag & ACR sync | ✅ In-warehouse aggregate data |
 | **Pricing & Contract Terms** | **MIT Open-Source** / Flexible Pro Pass (€249) | €3,500 – €6,000+/mo (12m lock-in) | €2,500 – €5,000+/mo (Annual contract) | $80,000 – $150,000+/yr (Enterprise) | $60,000 – $150,000+/yr (Enterprise) | $3,000 – $10,000+/mo (Managed SaaS) |
@@ -140,12 +141,13 @@ mmm_opt = sl.optimize_tv_with_mmm(attributed_spots, mmm_results=mmm_posterior_df
 │ • You demand peer-auditable mathematical transparency without black-box claims.  │
 │ • You refuse to pay €3,000–€8,000/mo on 12-month lock-in vendor contracts.       │
 │ • You operate in the EU (DACH, UK, France) under strict GDPR data requirements.  │
-│ • You run Media Mix Modeling (Robyn/Meridian) and need tactical TV priors.       │
+│ • You run Media Mix Modeling (PyMC/Robyn/Meridian) and want two-way integration.│
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Ready to audit your campaign?
 * **Try the Open-Core Engine:** [5-Minute Quickstart](/quickstart)
+* **Connect Spot Attribution & MMM:** [Two-Way MMM Integration](/mmm)
 * **Inspect the Mathematics:** [Econometric Methodology](/methodology)
-* **Explore Budget Optimization:** [Constrained Portfolio Optimizer](/optimizer)
+* **Explore Budget Optimization:** [Budget & MMM Optimizer](/optimizer)
 * **Explore Prime-Time Deconvolution & Amazon AMC:** [SpotLift Pro](/pro)

@@ -19,12 +19,14 @@ In real-world media planning, this naive reallocation fails for three critical r
 NAIVE REALLOCATION (FLAWED):
 [Sort Average CPIV] ──────────► "Dump budget into cheapest channel" ──► Audience Burnout & Contract Breaches
 
-SPOTLIFT ECONOMETRIC OPTIMIZATION:
+SPOTLIFT ECONOMETRIC & MMM-ANCHORED OPTIMIZATION:
 [Response Curves R(s)=α·s^β] ─┐
-[Marginal CPIV Equalization]  ─┼─► [Constrained Solver (SLSQP)] ──────► Mathematically Defensible Frontier:
-[Broadcaster Commitments]     ─┤   [KKT Interior Equalization]         Conservative, Balanced, Aggressive
-[Inventory Upper Bounds]      ─┘
+[Macro MMM Posteriors (--mmm)]─┼─► [Constrained Solver (SLSQP)] ──────► Risk-Aware Frontier &
+[Marginal CPIV Equalization]  ─┤   [Posterior Draw Uncertainty]        p10/p90 Bounds +
+[Broadcaster & Shift Caps]    ─┘                                       Conservative/Balanced/Aggressive
 ```
+
+> See the dedicated [Two-Way MMM Integration Guide](/mmm) for full details on calibrating PyMC/Meridian/Robyn with causal lower bounds and feeding MMM posteriors back into `optimize_tv_with_mmm`.
 
 ---
 
