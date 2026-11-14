@@ -180,19 +180,40 @@ def test_cli_validate_and_markdown_summary(tmp_path: Path):
 
 
 def test_cli_optimize_export_mmm(tmp_path: Path):
+    import json
+
     import pandas as pd
     test_csv = tmp_path / "attributed.csv"
     df = pd.DataFrame([
         {"channel": "RTL", "timestamp": "2026-03-02 20:15:00", "cost": 50000.0, "incremental_lift": 4000.0},
         {"channel": "Joyn", "timestamp": "2026-03-02 20:20:00", "cost": 20000.0, "incremental_lift": 3000.0},
+        {"channel": "RTL", "timestamp": "2026-03-09 20:15:00", "cost": 40000.0, "incremental_lift": 3200.0},
+        {"channel": "Joyn", "timestamp": "2026-03-09 20:20:00", "cost": 15000.0, "incremental_lift": 2400.0},
     ])
     df.to_csv(test_csv, index=False)
 
     mmm_out = tmp_path / "mmm_from_opt"
     res = runner.invoke(app, ["optimize", "--spots", str(test_csv), "--export-mmm", str(mmm_out)])
     assert res.exit_code == 0
+    assert (mmm_out / "pymc_causal_lower_bound.csv").exists()
     assert (mmm_out / "pymc_lift_test.csv").exists()
-    assert "Saved PyMC MMM lift test calibration to" in res.output
+    assert "Saved PyMC causal lower-bound & lift test calibration to" in res.output
+
+    # Direction 2 CLI: optimize --mmm <mmm_weekly.csv> --json
+    mmm_csv = tmp_path / "mmm_weekly.csv"
+    pd.DataFrame([
+        {"date": "2026-03-02", "spend": 70000.0, "contribution": 16000.0, "lower": 13000.0, "upper": 19000.0},
+        {"date": "2026-03-09", "spend": 55000.0, "contribution": 13500.0, "lower": 11000.0, "upper": 16000.0},
+    ]).to_csv(mmm_csv, index=False)
+
+    res_mmm_opt = runner.invoke(
+        app,
+        ["optimize", "--spots", str(test_csv), "--mmm", str(mmm_csv), "--mmm-adstock", "0.35", "--json"],
+    )
+    assert res_mmm_opt.exit_code == 0
+    payload = json.loads(res_mmm_opt.output)
+    assert payload["mmm_integrated"] is True
+    assert payload["implied_mmm_multiplier"] > 1.5
 
 
 def test_cli_mmm_subcommand_all_and_json(tmp_path: Path, monkeypatch):
@@ -209,37 +230,62 @@ def test_cli_mmm_subcommand_all_and_json(tmp_path: Path, monkeypatch):
     ])
     df.to_csv(test_csv, index=False)
 
-    # 1. Test pymc target
+    # 1. Test lower-bound target + latent_share snippet + provenance warning
+    lb_dir = tmp_path / "export_lb"
+    res_lb = runner.invoke(
+        app,
+        [
+            "mmm",
+            "--spots", str(test_csv),
+            "--target", "lower-bound",
+            "--pymc-mode", "latent_share",
+            "--outcome-overlap", "shared_same_series",
+            "--out-dir", str(lb_dir),
+            "--json",
+        ],
+    )
+    assert res_lb.exit_code == 0
+    lb_payload = json.loads(res_lb.output)
+    assert "pymc_causal_lower_bound" in lb_payload["files"]
+    assert "pymc_lower_bound_model" in lb_payload["files"]
+    assert "calibration_provenance" in lb_payload["files"]
+    assert any("CIRCULARITY" in w for w in lb_payload["warnings"])
+    assert (lb_dir / "pymc_causal_lower_bound.csv").exists()
+    assert (lb_dir / "pymc_lower_bound_model.py").exists()
+
+    # 2. Test pymc target
     pymc_dir = tmp_path / "export_pymc"
     res_pymc = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "pymc", "--out-dir", str(pymc_dir)])
     assert res_pymc.exit_code == 0
+    assert (pymc_dir / "pymc_causal_lower_bound.csv").exists()
     assert (pymc_dir / "pymc_lift_test.csv").exists()
     assert (pymc_dir / "mmm_priors.json").exists()
-    assert "PyMC-Marketing Lift Test" in res_pymc.output
+    assert "PyMC Causal Lower-Bound CSV" in res_pymc.output
 
-    # 2. Test meridian target (open-core JSON fallback)
+    # 3. Test meridian target (open-core JSON fallback)
     meridian_dir = tmp_path / "export_meridian"
     res_meridian = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "meridian", "--out-dir", str(meridian_dir)])
     assert res_meridian.exit_code == 0
     assert (meridian_dir / "meridian_priors.json").exists()
 
-    # 3. Test robyn target (open-core JSON fallback)
+    # 4. Test robyn target (open-core JSON fallback)
     robyn_dir = tmp_path / "export_robyn"
     res_robyn = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "robyn", "--out-dir", str(robyn_dir)])
     assert res_robyn.exit_code == 0
     assert (robyn_dir / "robyn_hyperparameters.json").exists()
 
-    # 4. Test target all with JSON output
+    # 5. Test target all with JSON output
     all_dir = tmp_path / "export_all"
     res_all = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "all", "--out-dir", str(all_dir), "--json"])
     assert res_all.exit_code == 0
     data = json.loads(res_all.output)
     assert data["target"] == "all"
+    assert "pymc_causal_lower_bound" in data["files"]
     assert "pymc_lift_test" in data["files"]
     assert "meridian_priors" in data["files"]
     assert "robyn_hyperparameters" in data["files"]
 
-    # 5. Test invalid target raises code 1
+    # 6. Test invalid target raises code 1
     res_invalid = runner.invoke(app, ["mmm", "--spots", str(test_csv), "--target", "nonexistent"])
     assert res_invalid.exit_code == 1
     assert "Invalid target" in res_invalid.output

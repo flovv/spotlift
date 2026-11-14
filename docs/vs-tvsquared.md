@@ -90,17 +90,18 @@ Modern econometricians often express deep skepticism toward tactical TV "spike m
 * **Unbiased Signed Residuals:** SpotLift preserves signed lift (`clip_negative=False` by default) so background noise cancels out symmetrically across spots and stations.
 * **Empirical Holdout Proof:** In regional campaigns (`generate_us_state_dataset`), unexposed control states receiving zero TV spend evaluate to exactly $0.0$ mean lift.
 * **Diminishing Marginal Returns:** `spotlift optimize` models concave power-law response curves ($R(s) = \alpha s^\beta$), equalizing marginal CPIV ($m\text{CPIV}$) rather than historical averages.
-* **The SpotLift ➔ MMM Bridge (`export_mmm_priors`):** SpotLift does not compete with MMM; it **feeds MMM**. Data scientists can export SpotLift's calibrated response curves directly as informative Bayesian priors for **Google Meridian** and **Meta Robyn**:
+* **Two-Way SpotLift ↔ MMM Bridge (`export_causal_lower_bound` & `optimize_tv_with_mmm`):** SpotLift does not compete with MMM; it operates **bidirectionally with MMM**. Immediate 0–8 min lift exports as a **causal lower bound** (or latent immediate-share likelihood via `attach_pymc_lower_bound`) with support-matched priors in `export_mmm_priors`, while macro MMM posteriors feed back into `optimize_tv_with_mmm` and `disaggregate_mmm_contributions` to anchor station/creative optimization:
 
 ```python
 import spotlift as sl
 
-# Run attribution and export empirical Bayesian priors for your MMM
+# Direction 1: Export causal lower bound & support-matched priors for MMM
+evidence = sl.export_causal_lower_bound(attributed_spots, mmm_channel_name="tv_broadcast")
 priors = sl.export_mmm_priors(attributed_spots, default_elasticity=0.70)
-
-# Inject directly into Meta Robyn or Google Meridian:
 print(priors["google_meridian_priors"])
-# Output: {'RTL': {'half_saturation_prior': 161500.0, 'slope_prior': 0.7}, ...}
+
+# Direction 2: Anchor SpotLift station budget optimization to macro MMM posterior
+mmm_opt = sl.optimize_tv_with_mmm(attributed_spots, mmm_results=mmm_posterior_df)
 ```
 
 ---

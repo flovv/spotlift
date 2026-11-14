@@ -63,54 +63,48 @@ results = spotlift.analyze_omnichannel_pro(
 
 ---
 
-## 3. Enterprise MMM Packages: Google Meridian & Meta Robyn
+## 3. Enterprise MMM Interchange Packages: Google Meridian & Meta Robyn
 
-While open-core `spotlift` provides native PyMC-Marketing calibration, enterprise brands and Tier-1 media agencies running **Google Meridian** (JAX/TFP) or **Meta Robyn** (R/Python Nevergrad) can generate turnkey, framework-ready calibration packages directly from **EM-deconvolved ground-truth spots**:
+While open-core `spotlift` provides native PyMC-Marketing calibration, enterprise brands running **Google Meridian** or **Meta Robyn** can export framework-formatted exploratory interchange packages directly from **EM-deconvolved spots** (with cluster-block bootstrap + Empirical-Bayes standard errors via `spotlift.core.mmm`):
 
-### A. Google Meridian Turnkey ModelSpec (`export_meridian_package`)
+### A. Google Meridian Interchange Config (`export_meridian_package`)
 
-Google Meridian requires a calibration dataset (`calibration_data.csv`) and informative priors on the Hill saturation parameters: half-saturation spend $K$ and slope $S$.
-
-SpotLift Pro computes period-aligned residual standard errors and exports a ready-to-run Meridian package:
+Exports period-aligned calibration data (`calibration_data.csv`) and a custom YAML interchange config (`meridian_model_spec.yaml` with `interchange_spec` root key, `observational_direct_response` provenance, and support-matched LogNormal half-saturation priors for translation into your pinned Meridian `ModelSpec`):
 
 ```python
 import spotlift as sl
 
-# Export Google Meridian calibration data and ModelSpec YAML
+# Export Google Meridian interchange CSV and YAML priors
 meridian_pack = sl.export_meridian_package(
     spots_df=pro_attributed_spots,   # Deconvolved via Shifted-Gamma EM
     freq="W-MON",                    # Matches weekly MMM rows
     lift_col="key_event_response",   # Conversions metric
-    adstock_retention=0.35,          # 35% geometric adstock carryover
     output_dir="./meridian_export"
 )
 # Automatically writes:
-#  - ./meridian_export/calibration_data.csv
-#  - ./meridian_export/meridian_model_spec.yaml (with LogNormal half_saturation priors)
+#  - ./meridian_export/calibration_data.csv (with cluster-block bootstrap std_error)
+#  - ./meridian_export/meridian_model_spec.yaml (interchange_spec + support-matched Hill priors)
 ```
 
-### B. Meta Robyn Turnkey Calibration & R Script (`export_robyn_package`)
+### B. Meta Robyn Exploratory Calibration & R Template (`export_robyn_package`)
 
-Meta Robyn's multi-objective evolutionary algorithm (`robyn_run`) relies on `calibration_input` tables to penalize unrealistic candidate models.
-
-SpotLift Pro auto-generates both the required calibration table and a complete, ready-to-run R execution script with pre-tuned hyperparameter ranges:
+Exports `calibration_input.csv` and an exploratory R template script (`run_robyn_calibration.R`) with support-matched `alphas` and `gammas` ranges. Observational minute-level attribution does not fabricate randomized lift-test confidence scores: `confidence` is left as `NA` unless an independently measured `experimental_confidence` in `(0, 1]` is supplied.
 
 ```python
-# Export Meta Robyn calibration input and turnkey R script
+# Export Meta Robyn calibration input and exploratory R script
 robyn_pack = sl.export_robyn_package(
     spots_df=pro_attributed_spots,
     metric_name="conversions",
     freq="W-MON",
-    adstock_retention=0.35,
     output_dir="./robyn_export"
 )
 # Automatically writes:
-#  - ./robyn_export/calibration_input.csv (with channel, dates, liftAbs, spend, confidence)
-#  - ./robyn_export/run_robyn_calibration.R (with tuned alphas, gammas, and thetas)
+#  - ./robyn_export/calibration_input.csv (with sigma, spend, liftAbs; confidence=NA unless supplied)
+#  - ./robyn_export/run_robyn_calibration.R (exploratory R template with support-matched bounds)
 ```
 
 > [!TIP]
-> **The Deconvolution Advantage:** Unlike open-core weighted-share, Pro's calibration packages are computed from **Shifted-Gamma EM-deconvolved spot lifts**. Your corporate MMM is calibrated on mathematically isolated station signals rather than blended prime-time collisions.
+> **The Deconvolution Advantage:** Unlike open-core weighted-share, Pro's exports are computed from **Shifted-Gamma EM-deconvolved spot lifts** rather than blended prime-time collisions—while keeping honest uncertainty and `observational_direct_response` provenance intact.
 
 ---
 

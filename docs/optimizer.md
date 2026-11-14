@@ -169,58 +169,60 @@ To give planning committees defensible options tailored to agency risk tolerance
 
 ---
 
-## 4. The SpotLift ➔ MMM Bridge: Exporting Bayesian Priors & PyMC Lift Tests
+## 4. Two-Way SpotLift ↔ MMM Integration: Causal Lower Bounds & MMM-Anchored Optimization
 
-One of the greatest challenges in Media Mix Modeling (**PyMC-Marketing**, **Meta Robyn**, **Google Meridian**, **Recast**) is the "cold start" prior problem: data science teams must guess channel saturation shapes and half-decay points, and weekly MMMs often fail to separate linear TV from seasonal organic baselines.
+Direct minute-level attribution (0–8 min response) and macro Media Mix Models (**PyMC-Marketing**, **Meta Robyn**, **Google Meridian**) have complementary strengths and blind spots:
+- High-frequency attribution causally isolates **immediate spot response**, but systematically under-reports total long-term TV contribution (word-of-mouth, brand equity, retail halo).
+- Weekly MMMs estimate **total adstocked lift and macro saturation**, but cannot separate 60+ collinear TV stations $\times$ creatives.
 
-SpotLift bridges tactical high-frequency TV attribution directly to executive macro MMM with two econometric exporters that avoid common statistical pitfalls:
+SpotLift connects both via an **asymmetric two-way bridge**:
 
-1. **Period-Grain Alignment (`freq="W-MON"`):** Avoids Jensen's Inequality distortion ($f(\sum x_t) \neq \sum f(x_t)$) by aggregating spot lifts to the exact time grain of the target MMM (`W-MON` for weekly or `D` for daily) rather than summing an entire multi-week flight into a single observation.
-2. **Residual-Based Uncertainty ($\sigma$):** Strips out planned spot-budget variation (e.g., €500 daytime vs. €10,000 prime-time spots) by fitting within-channel response curves first and computing $\sigma_t = \sqrt{N_t} \cdot \text{std}(e_j)$ from the *spot-level residuals* $e_j = l_j - \hat{l}_j$.
-3. **Adstock Carryover Scaling (`adstock_retention`):** Prevents downward bias when calibrating an MMM with multi-week adstock (`GeometricAdstock`) against an 8-minute direct spike by scaling immediate lift by $\frac{1}{1 - \lambda}$.
-4. **Broadcaster Rollup (`mmm_channel_name`):** Resolves cross-station multicollinearity in weekly MMMs by optionally pooling station-level observations into a unified `tv_broadcast` channel while retaining station disaggregation inside SpotLift.
+1. **Direction 1 — SpotLift → MMM (`export_causal_lower_bound`, `attach_pymc_lower_bound`, `export_mmm_priors`):**
+   - **No Silent Adstock Inflation (`carryover_mode="none"` by default):** By default, period-aligned direct response is exported as an exact **causal lower bound** (`direct_lift_floor`), rather than silently inflating immediate spikes via $\frac{1}{1-\lambda}$. Opt-in carryover scaling (`"finite_horizon"` or `"infinite_horizon"`) must be requested explicitly.
+   - **Dependence-Aware Uncertainty (`cluster_block_bootstrap_eb`):** Fits signed OLS power-law curves (`fit_spot_power_law_ols`), estimates period standard errors via cluster-block bootstrap (over `collision_cluster_id` or 2-hour windows) with Empirical-Bayes variance pooling ($\nu_0 = 5$) and explicit `discrepancy_rel`, avoiding naive i.i.d. $\sqrt{N_t}$ overconfidence.
+   - **Asymmetric Floor or Latent Immediate-Share (`attach_pymc_lower_bound`):** Connects into PyMC via an asymmetric HalfNormal lower-bound potential ($C_{\mathrm{TV}, t} \ge \text{direct\_lift\_floor}_t$) or a latent immediate-share model ($\text{direct\_lift}_t \sim \mathcal{N}(\rho \cdot C_{\mathrm{TV}, t}, \sigma_t^2)$).
 
 ```python
 import spotlift as sl
 
-# 1. Export period-aligned lift test DataFrame for PyMC-Marketing
-df_lift_test = sl.export_pymc_lift_test(
+# 1. Direction 1: Export causal lower bounds + attach PyMC potential / priors
+evidence = sl.export_causal_lower_bound(
     attributed_spots,
     freq="W-MON",                  # Match weekly MMM time grain
     lift_col="key_event_response", # Match MMM target metric (conversions vs. sessions)
-    adstock_retention=0.35,        # Account for multi-week brand carryover (lambda = 0.35)
     mmm_channel_name="tv_broadcast",
 )
-# Output columns: ['channel', 'x', 'delta_x', 'delta_y', 'sigma']
-# Pass directly into PyMC-Marketing:
-# mmm.add_lift_test_measurements(df_lift_test)
+# In PyMC:
+# sl.attach_pymc_lower_bound(mmm.model, evidence, tv_contribution_tensor=tv_contrib, mode="lower_bound")
 
-# 2. Export multi-framework MMM priors (PyMC-Marketing, Meta Robyn, Google Meridian)
+# Support-matched Hill priors & exploratory lift-test records:
 mmm_priors = sl.export_mmm_priors(attributed_spots, freq="W-MON", default_elasticity=0.70)
-
-print(mmm_priors["meta_robyn_hyperparameters"])
-# Output: {'RTL_alphas': [1.4], 'RTL_gammas': [0.45], 'Joyn_alphas': [1.4], ...}
-
-print(mmm_priors["google_meridian_priors"])
-# Output: {'RTL': {'half_saturation_prior': 40375.0, 'slope_prior': 0.7}, ...}
 ```
 
-### Top-Down MMM Disaggregation: Breaking PyMC Results Down to Channel & Creative Level
-
-Because a weekly MMM cannot include 15 separate TV stations $\times$ 6 creatives (90 collinear columns), best practice is a **bidirectional hierarchical loop**:
-1. **Bottom-Up Calibration (`export_pymc_lift_test`):** Pool stations into `tv_broadcast` and anchor the weekly PyMC MMM saturation curve.
-2. **Top-Down Disaggregation (`disaggregate_mmm_contributions`):** Take PyMC-Marketing's weekly posterior TV contributions (including multi-week adstock carryover and credible intervals) and allocate them back down to individual **TV stations (`channel`)**, **creatives (`creative_id`)**, or **`["channel", "creative_id"]`** pairs using SpotLift's adstock-filtered causal lift weights ($A_{g, t} = D_{g, t} + \lambda A_{g, t-1}$):
+2. **Direction 2 — MMM → SpotLift (`load_mmm_results`, `optimize_tv_with_mmm`, `disaggregate_mmm_contributions`):**
+   - **Macro-Anchored Portfolio Optimization (`optimize_tv_with_mmm` / `spotlift optimize --mmm ...`):** Anchors total TV contribution, calibrated saturation elasticity (`mmm_calibrated_beta`), and posterior draws (`draw_*` columns or summary intervals) to the MMM, applies optional risk aversion (`risk_aversion >= 0`) against posterior spread, enforces Empirical-Bayes shrinkage across sparse channels, and surfaces `projected_lift_p10`, `projected_lift_p90`, `direct_lift_floor`, `extrapolation_warning`, and `low_information_flag`.
+   - **Joint Posterior-Draw Disaggregation (`disaggregate_mmm_contributions`):** Allocates macro MMM TV contributions down to **TV stations (`channel`)**, **creatives (`creative_id`)**, or **`["channel", "creative_id"]`** pairs with Empirical-Bayes efficiency shrinkage (eliminating $\max(0, D)$ winner's-curse clipping) and exact draw conservation ($\sum_g C_{g,t}^{(m)} = C_{\mathrm{TV}, t}^{(m)}$).
 
 ```python
-# Break weekly PyMC MMM posterior TV contributions down to Creative & Station level
+# 2. Direction 2: Optimize station mix anchored to macro MMM posterior
+mmm_opt = sl.optimize_tv_with_mmm(
+    attributed_spots,
+    mmm_results=mmm_weekly_posterior_df,  # Or path to CSV/Parquet/JSON or scalar total
+    max_shift=0.35,
+    risk_aversion=0.25,
+)
+mmm_opt.print_summary()
+
+# 3. Break macro MMM posterior TV contributions down to Creative & Station level
 creative_mmm_df = sl.disaggregate_mmm_contributions(
     attributed_spots,
-    mmm_weekly_posterior_df,        # Columns: ['date', 'contribution', 'lower', 'upper']
-    by=["channel", "creative_id"],  # Or "channel" / "creative_id"
+    mmm_weekly_posterior_df,        # Columns: ['date', 'contribution', 'lower', 'upper'] or draw_* cols
+    by=["channel", "creative_id"],
     freq="W-MON",
-    adstock_retention=0.35,         # Propagates creative carryover into subsequent/dark weeks
 )
-print(creative_mmm_df[["channel", "creative_id", "spend", "direct_lift", "halo_lift", "mmm_contribution", "mmm_cpiv"]])
+print(
+    creative_mmm_df[
+        ["channel", "creative_id", "spend", "direct_lift_floor", "allocated_mmm_contribution", "implied_multiplier", "mmm_cpiv"]
+    ]
+)
 ```
-
-This transforms SpotLift from an isolated attribution tool into the **ground-truth feeder and granular disaggregator** for your enterprise econometrics stack.

@@ -115,11 +115,15 @@ spotlift optimize \
 | :--- | :--- | :--- | :--- |
 | `--spots`, `-s` | Path | *Required* | Path to attributed spots CSV/Parquet (or raw airings if `--web` is provided). |
 | `--web`, `-w` | Path | `None` | Optional GA4 telemetry path if spots file is not yet attributed. |
+| `--mmm` | Path | `None` | Optional path to MMM posterior contributions CSV/Parquet/JSON (**Direction 2: MMM → SpotLift Optimizer**). |
+| `--mmm-adstock` | Float | `0.0` | MMM geometric adstock retention $\lambda \in [0, 1)$ when `--mmm` is provided. |
+| `--risk-aversion` | Float | `0.0` | Posterior uncertainty penalty weight ($\ge 0$) when `--mmm` is provided. |
+| `--outcome-overlap` | String | `unknown` | Outcome provenance vs MMM: `unknown`, `independent_stream`, or `shared_same_series`. |
 | `--budget`, `-b` | Float | `Current Spend`| Target total budget (budget-neutral by default). |
 | `--max-shift`, `-m` | Float | `0.35` | Maximum relative budget reallocation allowed per channel ($\pm 35\%$). |
 | `--elasticity`, `-e` | Float | `0.70` | Diminishing returns elasticity parameter $\beta$ ($0 < \beta < 1$). |
 | `--scenarios` | Flag | `false` | Displays multi-scenario comparison (Conservative, Balanced, Aggressive). |
-| `--export-mmm` | Path | `None` | Optional directory to export period-aligned PyMC lift test calibration data alongside recommendations. |
+| `--export-mmm` | Path | `None` | Optional directory to export `pymc_causal_lower_bound.csv` and `pymc_lift_test.csv` alongside recommendations. |
 | `--json` | Flag | `false` | Outputs machine-readable JSON summary for AI coding agents. |
 | `--out`, `-o` | Path | `None` | Destination path to export recommended budget CSV. |
 
@@ -127,18 +131,20 @@ spotlift optimize \
 
 ### `spotlift mmm`
 
-Exports period-aligned calibration datasets and Bayesian priors for **PyMC-Marketing**, **Google Meridian**, and **Meta Robyn** to anchor macro saturation curves from high-frequency TV lift.
+Exports **causal lower-bound** datasets (`pymc_causal_lower_bound.csv`), PyMC potential/latent-share adapters (`pymc_lower_bound_model.py`), provenance metadata (`calibration_provenance.json`), and support-matched priors for **PyMC-Marketing**, **Google Meridian**, and **Meta Robyn**.
 
 ```bash
-# Export PyMC-Marketing lift test calibration (weekly W-MON grain)
-spotlift mmm --spots attributed_spots.csv --target pymc --out-dir ./mmm_export
+# Export PyMC causal lower-bound & potential snippet (weekly W-MON grain)
+spotlift mmm --spots attributed_spots.csv --target lower-bound --out-dir ./mmm_export
 
-# Export all frameworks with adstock carryover scaling and station pooling
+# Export all frameworks with explicit latent-share PyMC adapter & finite-horizon carryover
 spotlift mmm \
   --spots attributed_spots.csv \
   --target all \
   --freq W-MON \
+  --pymc-mode latent_share \
   --adstock-retention 0.35 \
+  --carryover-mode finite_horizon \
   --mmm-channel-name tv_broadcast \
   --out-dir ./mmm_export
 ```
@@ -147,13 +153,16 @@ spotlift mmm \
 | :--- | :--- | :--- | :--- |
 | `--spots`, `-s` | Path | *Required* | Path to attributed spots CSV/Parquet (or raw airings if `--web` is provided). |
 | `--web`, `-w` | Path | `None` | Optional GA4 telemetry path if spots file is not yet attributed. |
-| `--target`, `-t` | String | `pymc` | Target MMM framework: `pymc`, `meridian`, `robyn`, or `all`. |
+| `--target`, `-t` | String | `pymc` | Target MMM framework: `pymc`, `lower-bound`, `meridian`, `robyn`, or `all`. |
 | `--out-dir`, `-o` | Path | `./mmm_export` | Destination folder for calibration files and prior specs. |
 | `--freq`, `-f` | String | `W-MON` | MMM time period frequency (`W-MON` for weekly or `D` for daily). |
 | `--lift-col`, `-l` | String | `incremental_lift` | Lift metric (`incremental_lift` for sessions or `key_event_response` for conversions). |
-| `--adstock-retention`, `-a`| Float | `0.0` | Geometric adstock retention rate $\lambda \in [0, 1)$ to scale immediate spike to total steady-state lift. |
+| `--adstock-retention`, `-a`| Float | `0.0` | Optional adstock decay $\lambda \in [0, 1)$ (paired with `--carryover-mode`; default `0.0`). |
+| `--carryover-mode` | String | `none` | Carryover conversion mode: `none` (default causal floor), `finite_horizon`, or `infinite_horizon`. |
+| `--pymc-mode` | String | `lower_bound` | PyMC snippet likelihood: `lower_bound` (asymmetric floor) or `latent_share` (learned $\rho$). |
+| `--outcome-overlap` | String | `unknown` | Outcome provenance vs MMM: `unknown`, `independent_stream`, or `shared_same_series`. |
 | `--mmm-channel-name` | String | `None` | Optional unified TV media column name (e.g. `tv_broadcast`) to pool collinear stations. |
-| `--key`, `-k` | String | `None` | SpotLift Pro key (for turnkey Meridian ModelSpec YAML & Robyn R scripts). |
+| `--key`, `-k` | String | `None` | SpotLift Pro key (for Meridian interchange YAML & Robyn calibration exports). |
 | `--json` | Flag | `false` | Outputs machine-readable JSON summary for CI/CD pipelines. |
 
 ---

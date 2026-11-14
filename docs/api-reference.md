@@ -51,6 +51,7 @@ Solves the constrained portfolio budget optimization problem using diminishing r
 ```python
 spotlift.optimize_budget(
     df: pd.DataFrame,
+    *,
     total_budget: Optional[float] = None,
     channel_col: str = "channel",
     cost_col: str = "cost",
@@ -61,6 +62,9 @@ spotlift.optimize_budget(
     bounds: Optional[Mapping[str, tuple[float, float]]] = None,
     group_constraints: Optional[Mapping[str, Any]] = None,
     compute_scenarios: bool = True,
+    mmm_results: Any = None,
+    risk_aversion: float = 0.0,
+    n_posterior_draws: int = 300,
 ) -> BudgetOptimizationResult
 ```
 
@@ -77,49 +81,110 @@ spotlift.optimize_budget(
 * **`bounds`** (*Mapping[str, tuple[float, float]]*, optional): Explicit `(min_spend, max_spend)` bounds per channel.
 * **`group_constraints`** (*Mapping[str, Any]*, optional): Broadcaster group share commitments (e.g. `{"Ad Alliance": {"channels": ["RTL", "VOX"], "min_share": 0.45}}`).
 * **`compute_scenarios`** (*bool*, default `True`): If `True`, computes Conservative ($\pm 15\%$), Balanced ($\pm 35\%$), and Aggressive ($\pm 60\%$) scenarios.
+* **`mmm_results`** (*Any*, optional): Optional macro MMM results (float total, DataFrame, CSV/Parquet/JSON path, dict/list, or `MMMResultsInput`). When provided, delegates to `optimize_tv_with_mmm()` to anchor macro scale, elasticity, and posterior uncertainty.
+* **`risk_aversion`** (*float*, default `0.0`): Posterior uncertainty penalty weight used when `mmm_results` is provided.
+* **`n_posterior_draws`** (*int*, default `300`): Number of posterior draws used when `mmm_results` is provided.
 
 #### Returns
 
-* **`BudgetOptimizationResult`**: Container holding `recommendations` DataFrame, current and optimized totals, percentage gains, `scenarios` dict, `print_summary()`, and `summary_dict()`.
+* **`BudgetOptimizationResult`**: Container holding `recommendations` DataFrame, current and optimized totals, percentage gains, `scenarios` dict, MMM metadata (`mmm_integrated`, `mmm_calibrated_beta`, `implied_mmm_multiplier`, `mmm_warnings`), `print_summary()`, and `summary_dict()`.
 
 ---
 
-### `spotlift.export_pymc_lift_test()`
+### `spotlift.export_causal_lower_bound()`
 
-Exports SpotLift high-frequency attribution as a `pymc-marketing` lift test calibration DataFrame (`[channel, x, delta_x, delta_y, sigma]`) ready for `MMM.add_lift_test_measurements(df_lift_test)`.
+Exports SpotLift 0–8 minute attribution as period-aligned **causal lower-bound** calibration evidence (`CalibrationEvidence`) with cluster-block bootstrap + Empirical-Bayes pooled standard errors and explicit provenance (`carryover_mode="none"` by default; does not scale immediate lift by $\frac{1}{1-\lambda}$).
 
 ```python
-spotlift.export_pymc_lift_test(
+spotlift.export_causal_lower_bound(
     df: pd.DataFrame,
+    *,
+    mmm_channel_name: Optional[str] = None,
     channel_col: str = "channel",
     timestamp_col: str = "timestamp",
     cost_col: str = "cost",
     lift_col: str = "incremental_lift",
     freq: Optional[str] = "W-MON",
     elasticity: float = 0.70,
-    adstock_retention: float = 0.0,
+    elasticity_map: Optional[Mapping[str, float]] = None,
+    outcome_units: str = "sessions",
+    window_minutes: int = 8,
+    overlap_with_mmm_outcome: str = "unknown",
+    discrepancy_rel: float = 0.10,
+    n_boot: int = 300,
+    random_state: int = 42,
+) -> CalibrationEvidence
+```
+
+#### Returns
+
+* **`CalibrationEvidence`**: Structured evidence bundle whose `.data` DataFrame contains `['channel', 'period', 'period_start', 'period_end', 'spend', 'direct_lift_floor', 'sigma', 'lower_95_floor', 'n_spots', 'n_blocks', 'evidence_class', 'estimand', 'adstock_scaled']` alongside `.to_metadata_dict()` provenance.
+
+---
+
+### `spotlift.attach_pymc_lower_bound()` & `spotlift.generate_pymc_lower_bound_snippet()`
+
+Attaches SpotLift `CalibrationEvidence` to a PyMC / PyMC-Marketing model without assuming equality between immediate 8-minute lift and total long-term MMM contribution:
+
+```python
+spotlift.attach_pymc_lower_bound(
+    model: Any,
+    evidence: CalibrationEvidence,
+    *,
+    tv_contribution_tensor: Any,
+    mode: Literal["lower_bound", "latent_share"] = "lower_bound",
+    rho_prior: tuple[float, float] = (2.0, 3.0),
+) -> Any
+```
+
+* **`mode="lower_bound"`**: Adds a `pm.Potential` imposing an asymmetric soft HalfNormal penalty only when modeled MMM TV contribution falls below `direct_lift_floor` (modulo block-bootstrap `sigma`).
+* **`mode="latent_share"`**: Introduces a learned immediate-share parameter $\rho \sim \text{Beta}(\alpha, \beta)$ and links `direct_lift_floor` to $\rho \cdot C_{\mathrm{TV}, t}$.
+
+---
+
+### `spotlift.export_pymc_lift_test()`
+
+Exports an exploratory lift-test table (`[channel, x, delta_x, delta_y, sigma]`, or `CalibrationEvidence` when `return_evidence=True`) aligned to MMM time periods using cluster-block bootstrap + EB standard errors and explicit `discrepancy_rel`.
+
+```python
+spotlift.export_pymc_lift_test(
+    df: pd.DataFrame,
+    *,
     mmm_channel_name: Optional[str] = None,
+    channel_col: str = "channel",
+    timestamp_col: str = "timestamp",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    freq: Optional[str] = "W-MON",
+    elasticity: float = 0.70,
+    elasticity_map: Optional[Mapping[str, float]] = None,
+    adstock_retention: float = 0.0,
+    carryover_mode: Optional[str] = None,
+    horizon_periods: Optional[int] = None,
     min_sigma_rel: float = 0.05,
-) -> pd.DataFrame
+    discrepancy_rel: float = 0.10,
+    overlap_with_mmm_outcome: str = "unknown",
+    return_evidence: bool = False,
+) -> Union[pd.DataFrame, CalibrationEvidence]
 ```
 
 #### Parameters
 
-* **`df`** (*pd.DataFrame*): Attributed spots DataFrame from `analyze_spots()`.
 * **`freq`** (*str*, optional, default `"W-MON"`): Pandas period offset matching the target MMM time grain (`"W-MON"` for weekly, `"D"` for daily, or `None` for full-flight total).
-* **`lift_col`** (*str*, default `"incremental_lift"`): Target response column (`"incremental_lift"` for sessions or `"key_event_response"` for conversions).
-* **`adstock_retention`** (*float*, default `0.0`): Geometric adstock retention rate $\lambda \in [0, 1)$ used to scale immediate 8-minute lift to cumulative multi-week impact via $\frac{1}{1 - \lambda}$.
+* **`adstock_retention`** (*float*, default `0.0`): Optional geometric adstock retention $\lambda \in [0, 1)$. Requires explicit `carryover_mode` (`"finite_horizon"` or `"infinite_horizon"`) to enable carryover scaling; by default (`carryover_mode=None`) no adstock inflation is applied.
+* **`overlap_with_mmm_outcome`** (*str*, default `"unknown"`): Outcome provenance relative to the MMM target (`"unknown"`, `"independent_stream"`, or `"shared_same_series"`).
 * **`mmm_channel_name`** (*str*, optional): Optional unified channel name (e.g. `"tv_broadcast"`) to aggregate stations into a single macro MMM media column.
 
 ---
 
 ### `spotlift.export_mmm_priors()`
 
-Exports calibrated channel-level response curves as empirical Bayesian priors for Media Mix Modeling (PyMC-Marketing, Meta Robyn, Google Meridian, Recast).
+Exports causal lower-bound evidence, exploratory lift-test records, and support-matched Hill/Robyn priors for Media Mix Modeling.
 
 ```python
 spotlift.export_mmm_priors(
     df: pd.DataFrame,
+    *,
     channel_col: str = "channel",
     timestamp_col: str = "timestamp",
     cost_col: str = "cost",
@@ -128,27 +193,77 @@ spotlift.export_mmm_priors(
     default_elasticity: float = 0.70,
     elasticity_map: Optional[Mapping[str, float]] = None,
     adstock_retention: float = 0.0,
+    carryover_mode: Optional[str] = None,
+    overlap_with_mmm_outcome: str = "unknown",
 ) -> dict[str, Any]
 ```
 
 #### Returns
 
 * **`dict[str, Any]`**: Dictionary containing:
-  * `"channels"`: Channel-level parameter specs (`historical_spend`, `mean_period_spend`, `n_periods`, `historical_lift`, `alpha_scale`, `elasticity_beta`, `half_saturation_spend`).
-  * `"pymc_marketing_lift_test"`: Period-aligned records ready for `pymc-marketing` `MMM.add_lift_test_measurements()`.
-  * `"meta_robyn_hyperparameters"`: Pre-formatted dictionary of `alphas` and `gammas` for Meta Robyn.
-  * `"google_meridian_priors"`: Pre-formatted dictionary of period-scaled `half_saturation_prior` and `slope_prior` for Google Meridian.
+  * `"channels"`: Channel-level OLS power-law specs and support-matched Hill parameters.
+  * `"causal_lower_bound"`: Period-aligned causal lower-bound records.
+  * `"pymc_marketing_lift_test"`: Exploratory period-aligned lift-test records.
+  * `"meta_robyn_hyperparameters"`: Support-matched `alphas` and `gammas` ranges for Meta Robyn.
+  * `"google_meridian_priors"`: Support-matched `half_saturation_prior` and `slope_prior` dicts for Google Meridian.
+  * `"provenance"`: Metadata clarifying observational direct-response evidence class and carryover mode.
+
+---
+
+### `spotlift.load_mmm_results()` & `spotlift.optimize_tv_with_mmm()`
+
+Loads macro MMM TV contribution outputs and runs **Direction 2 (MMM → SpotLift)** portfolio optimization anchored to MMM macro total lift, calibrated elasticity, and posterior draws:
+
+```python
+spotlift.load_mmm_results(
+    source: Union[float, Mapping[str, Any], pd.DataFrame, MMMResultsInput, str, Path],
+    *,
+    date_col: str = "date",
+    contribution_col: str = "contribution",
+    lower_col: Optional[str] = "lower",
+    upper_col: Optional[str] = "upper",
+    spend_col: Optional[str] = "spend",
+    adstock_retention: float = 0.0,
+    elasticity: Optional[float] = None,
+    freq: str = "W-MON",
+    overlap_with_spots_outcome: str = "unknown",
+) -> MMMResultsInput
+
+spotlift.optimize_tv_with_mmm(
+    spots_df: pd.DataFrame,
+    mmm_results: Union[float, Mapping[str, Any], pd.DataFrame, MMMResultsInput, str, Path],
+    *,
+    by: str = "channel",
+    total_budget: Optional[float] = None,
+    timestamp_col: str = "timestamp",
+    cost_col: str = "cost",
+    lift_col: str = "incremental_lift",
+    max_shift: float = 0.35,
+    default_elasticity: float = 0.70,
+    bounds: Optional[Mapping[str, tuple[float, float]]] = None,
+    group_constraints: Optional[Mapping[str, Any]] = None,
+    risk_aversion: float = 0.0,
+    n_posterior_draws: int = 300,
+    compute_scenarios: bool = True,
+    random_state: int = 42,
+) -> BudgetOptimizationResult
+```
+
+#### Returns
+
+* **`BudgetOptimizationResult`**: Includes `recommendations` with `direct_lift_floor`, `projected_direct_lift`, `projected_lift`, `projected_lift_p10`, `projected_lift_p90`, `low_information_flag`, and `extrapolation_warning`, plus `mmm_calibrated_beta`, `implied_mmm_multiplier`, and `mmm_warnings`.
 
 ---
 
 ### `spotlift.disaggregate_mmm_contributions()`
 
-Disaggregates macro PyMC-Marketing TV contributions (and optional Bayesian credible intervals) down to individual TV stations (`"channel"`), creatives (`"creative_id"`), or multi-dimensional slices (`["channel", "creative_id"]`) using adstock-filtered high-frequency causal lift weights.
+Disaggregates macro MMM TV contributions (and posterior draws / intervals) down to individual TV stations (`"channel"`), creatives (`"creative_id"`), or multi-dimensional slices (`["channel", "creative_id"]`) using Empirical-Bayes shrunk efficiency weights and joint posterior-draw conservation ($\sum_g C_{g,t}^{(m)} = C_{\mathrm{TV}, t}^{(m)}$).
 
 ```python
 spotlift.disaggregate_mmm_contributions(
     spots_df: pd.DataFrame,
-    mmm_contributions: Union[float, pd.DataFrame],
+    mmm_contributions: Union[float, pd.DataFrame, MMMResultsInput],
+    *,
     by: Union[str, Sequence[str]] = "channel",
     timestamp_col: str = "timestamp",
     cost_col: str = "cost",
@@ -158,20 +273,22 @@ spotlift.disaggregate_mmm_contributions(
     lower_col: Optional[str] = "lower",
     upper_col: Optional[str] = "upper",
     freq: str = "W-MON",
-    adstock_retention: float = 0.0,
+    adstock_retention: Optional[float] = None,
     return_period_grain: bool = False,
+    n_draws: int = 400,
+    random_state: int = 42,
 ) -> pd.DataFrame
 ```
 
 #### Returns
 
-* **`pd.DataFrame`**: Decomposed table with `spend`, `direct_lift` (8-minute spike), `halo_lift` (delayed MMM adstock & cross-channel halo), `mmm_contribution`, `share_of_spend`, `share_of_mmm`, `direct_cpiv`, and `mmm_cpiv` (plus `mmm_lower` and `mmm_upper` when credible intervals are supplied).
+* **`pd.DataFrame`**: Decomposed table with `spend`, `direct_lift_floor`, `allocated_mmm_contribution`, `allocated_lower`, `allocated_upper`, `reconciliation_residual`, `share_of_spend`, `share_of_mmm`, `implied_multiplier`, `direct_cpiv`, `mmm_cpiv`, and `low_information_flag`.
 
 ---
 
 ### `spotlift.export_meridian_package()` (Pro)
 
-Exports Google Meridian calibration dataset (`calibration_data.csv`) and turnkey `ModelSpec` YAML specification with LogNormal Hill half-saturation priors from Shifted-Gamma EM deconvolved spot lifts.
+Exports Google Meridian interchange calibration data (`calibration_data.csv`) and custom interchange config (`meridian_model_spec.yaml` under root key `interchange_spec`) with support-matched Hill priors and explicit `observational_direct_response` provenance.
 
 ```python
 spotlift.export_meridian_package(
@@ -185,8 +302,11 @@ spotlift.export_meridian_package(
     freq: str = "W-MON",
     elasticity: float = 0.70,
     adstock_retention: float = 0.0,
+    carryover_mode: Optional[str] = None,
     mmm_channel_name: Optional[str] = None,
     min_sigma_rel: float = 0.05,
+    discrepancy_rel: float = 0.10,
+    overlap_with_mmm_outcome: str = "unknown",
     output_dir: Optional[Union[str, Path]] = None,
 ) -> dict[str, Any]
 ```
@@ -195,7 +315,7 @@ spotlift.export_meridian_package(
 
 ### `spotlift.export_robyn_package()` (Pro)
 
-Exports Meta Robyn calibration table (`calibration_input.csv`) and turnkey R execution script (`run_robyn_calibration.R`) with pre-tuned hyperparameter ranges (`alphas`, `gammas`, `thetas`).
+Exports Meta Robyn calibration table (`calibration_input.csv`) and exploratory R execution script (`run_robyn_calibration.R`) with support-matched hyperparameter ranges (`alphas`, `gammas`, `thetas`). `confidence` is left as missing (`NA`) unless an independently measured `experimental_confidence` in `(0, 1]` is provided.
 
 ```python
 spotlift.export_robyn_package(
@@ -210,7 +330,10 @@ spotlift.export_robyn_package(
     freq: str = "W-MON",
     elasticity: float = 0.70,
     adstock_retention: float = 0.0,
+    carryover_mode: Optional[str] = None,
+    experimental_confidence: Optional[float] = None,
     mmm_channel_name: Optional[str] = None,
+    overlap_with_mmm_outcome: str = "unknown",
     output_dir: Optional[Union[str, Path]] = None,
 ) -> dict[str, Any]
 ```

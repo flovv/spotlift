@@ -146,47 +146,54 @@ results.print_summary()
 
 ---
 
-## 🔄 Media Mix Modeling (MMM) Bridge: PyMC-Marketing, Robyn & Meridian
+## 🔄 Two-Way Media Mix Modeling (MMM) Integration: PyMC-Marketing, Robyn & Meridian
 
-While SpotLift measures tactical high-frequency response (5–15 minute window), macro brand planning requires aggregate **Media Mix Modeling (MMM)**. SpotLift bridges tactical TV attribution with macro econometrics via a **two-way hierarchical workflow**:
+High-frequency minute-level attribution (0–8 min window) measures a **causal direct-response signal**, which systematically under-reports total long-term TV contribution (brand equity, delayed word-of-mouth, retail halo). Conversely, weekly **Media Mix Models (MMM)** recover macro saturation curves and total carryover lift, but cannot separate 60+ collinear TV stations $\times$ creatives. SpotLift connects both worlds via an **asymmetric two-way bridge**:
 
-### 1. Bottom-Up Calibration (`export_pymc_lift_test` & `export_mmm_priors`)
-Avoids the classic Jensen's Inequality distortion ($f(\sum x_t) \neq \sum f(x_t)$) and planned-spend $\sigma$ explosion by exporting period-aligned (`freq="W-MON"`), residual-calibrated lift test observations directly for PyMC-Marketing's `add_lift_test_measurements()`:
+### 1. SpotLift → MMM: Causal Lower-Bound & Latent Share Calibration
+Instead of pretending a 0–8 minute spike equals total TV lift—or silently multiplying it by $\frac{1}{1 - \lambda}$—SpotLift treats high-frequency attribution strictly as an **observational causal lower bound** (`carryover_mode="none"` by default), with **cluster-block bootstrap + Empirical-Bayes variance pooling** and explicit model-discrepancy error (`discrepancy_rel`):
 
 ```python
 import spotlift as sl
 
-# Export period-aligned, residual-calibrated lift tests for PyMC-Marketing
-df_lift_test = sl.export_pymc_lift_test(
+# Export period-aligned causal lower bounds with block-bootstrap SEs & provenance
+evidence = sl.export_causal_lower_bound(
     attributed_spots,
     freq="W-MON",                   # Align with weekly MMM rows
-    lift_col="key_event_response",  # Conversions target
-    adstock_retention=0.35,         # Scale immediate spike for multi-week carryover
+    lift_col="key_event_response",  # Match MMM target outcome
     mmm_channel_name="tv_broadcast" # Pool stations to prevent collinearity
 )
 
-# Calibrate PyMC-Marketing:
-# mmm.add_lift_test_measurements(df_lift_test)
-```
+# Attach inside PyMC / PyMC-Marketing via asymmetric floor (C_tv >= direct_lift)
+# or latent immediate-share model (direct_lift ~ Normal(rho * C_tv, sigma)):
+# sl.attach_pymc_lower_bound(pymc_model, evidence, tv_contribution_tensor=tv_contrib, mode="lower_bound")
 
-Export empirical Bayesian priors for **Meta Robyn** (`alphas`/`gammas`) and **Google Meridian** (`half_saturation_prior`/`slope_prior`):
-```python
+# Also available: exploratory lift-test CSV & support-matched Hill/Robyn priors
+df_lift_test = sl.export_pymc_lift_test(attributed_spots, mmm_channel_name="tv_broadcast")
 priors = sl.export_mmm_priors(attributed_spots, freq="W-MON", default_elasticity=0.70)
 ```
 
-### 2. Top-Down Creative & Channel Breakdown (`disaggregate_mmm_contributions`)
-Weekly MMMs cannot include 60+ collinear station $\times$ creative columns. SpotLift takes aggregate PyMC TV posterior contributions and decomposes them down to individual **TV stations (`channel`)** and **creatives (`creative_id`)** using causal adstock-filtered lift weights ($A_{g, t} = D_{g, t} + \lambda A_{g, t-1}$), accurately attributing carryover even in dark hiatus weeks:
+### 2. MMM → SpotLift: MMM-Anchored TV Optimization & Creative Breakdown
+When you already have macro MMM results (scalar total, DataFrame, CSV/Parquet/JSON, or posterior `draw_*` columns), feed them back into SpotLift to anchor total ROI, saturation elasticity, and posterior uncertainty while retaining granular station/creative discrimination:
 
 ```python
-# Break down weekly PyMC TV contribution (including dark weeks) to Creative level
+# Anchor station budget optimization to macro MMM total lift & posterior draws
+mmm_opt = sl.optimize_tv_with_mmm(
+    spots_df=attributed_spots,
+    mmm_results=pymc_weekly_posterior,  # Accepts date, contribution, lower, upper or draw_* cols
+    max_shift=0.35,
+    risk_aversion=0.25,                 # Penalize posterior spread during reallocation
+)
+mmm_opt.print_summary()  # Reports projected_lift_p10 / p90, direct_lift_floor, extrapolation warnings
+
+# Disaggregate macro MMM posterior contributions to station x creative with draw conservation
 creative_mmm = sl.disaggregate_mmm_contributions(
     spots_df=attributed_spots,
-    mmm_contributions=pymc_weekly_posterior,  # columns: date, contribution, lower, upper
+    mmm_contributions=pymc_weekly_posterior,
     by=["channel", "creative_id"],
     freq="W-MON",
-    adstock_retention=0.35,
 )
-print(creative_mmm[["channel", "creative_id", "spend", "direct_lift", "halo_lift", "mmm_contribution", "mmm_cpiv"]])
+print(creative_mmm[["channel", "creative_id", "spend", "direct_lift_floor", "allocated_mmm_contribution", "implied_multiplier", "mmm_cpiv"]])
 ```
 
 ---
@@ -337,7 +344,7 @@ When two or more spots air within the 8-minute response window on different stat
 | **Amazon Branded PPC Cannibalization Auditor** | ❌ | ✅ Wasted PPC Tax Calculator |
 | **Creative Wear-Out (Daypart Fixed Effects)** | ❌ | ✅ OLS Decay Regression |
 | **Interactive Client HTML & Excel Export** | ❌ | ✅ Standalone Decks (White-Label) |
-| **Google Meridian & Meta Robyn Turnkey Packages** | ❌ (Generic Dicts) | ✅ `export_meridian_package` & `export_robyn_package` |
+| **Google Meridian & Meta Robyn Interchange Exports** | ❌ (Prior Dicts Only) | ✅ `export_meridian_package` & `export_robyn_package` |
 
 > [!TIP]
 > **Need deconvolution for prime-time spot collisions and Amazon AMC halo modeling?**
@@ -361,10 +368,11 @@ spotlift run --spots my_schaltplan.csv --web my_ga4_sessions.csv --tz Europe/Ber
 spotlift sql --source ga4 --project my-gcp-project --dataset analytics_12345 --out ./ga4_extract.sql
 spotlift sql --source amc --start 2026-03-01 --end 2026-03-21 --out ./amc_extract.sql
 
-# 5. Solve constrained portfolio budget reallocation
+# 5. Solve constrained portfolio budget reallocation (optionally anchored to macro MMM)
 spotlift optimize --spots ./attributed_spots.csv --budget 500000 --max-shift 0.35 --scenarios
+spotlift optimize --spots ./attributed_spots.csv --mmm ./mmm_posterior.csv --risk-aversion 0.25
 
-# 6. Export period-aligned MMM calibration data (PyMC, Meridian, Robyn)
+# 6. Export causal lower-bound & MMM calibration data (PyMC, Meridian, Robyn)
 spotlift mmm --spots ./attributed_spots.csv --target all --freq W-MON --out-dir ./mmm_export
 
 # 7. Authenticate Pro license key

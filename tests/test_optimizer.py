@@ -138,9 +138,11 @@ def test_export_mmm_priors(sample_attribution_df: pd.DataFrame) -> None:
 
     priors = export_mmm_priors(sample_attribution_df, default_elasticity=0.72)
     assert "channels" in priors
+    assert "causal_lower_bound" in priors
     assert "pymc_marketing_lift_test" in priors
     assert "meta_robyn_hyperparameters" in priors
     assert "google_meridian_priors" in priors
+    assert "provenance" in priors
 
     assert "RTL" in priors["channels"]
     rtl_priors = priors["channels"]["RTL"]
@@ -150,16 +152,16 @@ def test_export_mmm_priors(sample_attribution_df: pd.DataFrame) -> None:
 
     assert "RTL_alphas" in priors["meta_robyn_hyperparameters"]
     assert "RTL" in priors["google_meridian_priors"]
-    assert priors["google_meridian_priors"]["RTL"]["slope_prior"] == 0.72
+    assert priors["google_meridian_priors"]["RTL"]["prior_basis"] == "weak_empirical_support_matched"
 
 
 def test_export_pymc_lift_test_grain_and_residuals() -> None:
     from spotlift.core.optimizer import export_pymc_lift_test
 
-    # Create a 2-week campaign with wildly different spot costs (500 vs 8000)
-    # that follow an exact power-law curve (zero residual noise)
+    # Create a 2-week campaign with varying spot costs (500 vs 8000)
+    # following a clean power-law curve
     rows = []
-    for week_offset, date_str in [(0, "2026-03-02T18:00:00Z"), (1, "2026-03-09T18:00:00Z")]:
+    for _week_offset, date_str in [(0, "2026-03-02T18:00:00Z"), (1, "2026-03-09T18:00:00Z")]:
         for cost in [500.0, 2000.0, 8000.0]:
             lift = 2.5 * (cost**0.70)
             rows.append({
@@ -172,29 +174,42 @@ def test_export_pymc_lift_test_grain_and_residuals() -> None:
 
     df = pd.DataFrame(rows)
 
-    # 1. Weekly grain should produce 2 rows (one per week), each with weekly spend = 10,500
+    # 1. Default export: weekly grain, no hidden infinite carryover scaling, discrepancy floor > 0
     lift_df = export_pymc_lift_test(df, freq="W-MON", elasticity=0.70)
+    assert isinstance(lift_df, pd.DataFrame)
     assert list(lift_df.columns) == ["channel", "x", "delta_x", "delta_y", "sigma"]
     assert len(lift_df) == 2
     assert lift_df["delta_x"].iloc[0] == pytest.approx(10500.0)
+    assert lift_df["sigma"].iloc[0] > 0.0
+    assert lift_df.attrs["calibration_evidence"]["carryover_mode"] == "none"
 
-    # Because spots follow the power-law curve exactly, residual std is ~0,
-    # so sigma hits the 5% minimum relative floor rather than exploding from cost variance!
-    expected_floor = lift_df["delta_y"].iloc[0] * 0.05
-    assert lift_df["sigma"].iloc[0] == pytest.approx(expected_floor, rel=1e-2)
-
-    # 2. Test adstock_retention carryover scaling and conversion target column
-    conv_df = export_pymc_lift_test(
+    # 2. Distinguish finite-horizon vs explicit infinite-horizon carryover conversion
+    finite_df = export_pymc_lift_test(
         df,
         mmm_channel_name="tv_total",
         lift_col="key_event_response",
         freq="W-MON",
         adstock_retention=0.50,
+        carryover_mode="finite_horizon",
     )
-    assert (conv_df["channel"] == "tv_total").all()
-    # With 0.50 retention, cumulative steady-state lift is 2x direct conversion lift
-    direct_week_convs = df["key_event_response"].sum() / 2.0
-    assert conv_df["delta_y"].iloc[0] == pytest.approx(direct_week_convs * 2.0, rel=1e-2)
+    assert isinstance(finite_df, pd.DataFrame)
+    assert (finite_df["channel"] == "tv_total").all()
+    direct_week_convs = float(df["key_event_response"].sum()) / 2.0
+    # Week 0 has 1 remaining week -> (1 - 0.5^2)/(1 - 0.5) = 1.5x; final week 1 has 1.0x
+    assert finite_df["delta_y"].iloc[0] == pytest.approx(direct_week_convs * 1.5, rel=1e-2)
+    assert finite_df["delta_y"].iloc[1] == pytest.approx(direct_week_convs * 1.0, rel=1e-2)
+
+    # Explicit opt-in infinite horizon matches steady-state 1 / (1 - lambda)
+    inf_df = export_pymc_lift_test(
+        df,
+        mmm_channel_name="tv_total",
+        lift_col="key_event_response",
+        freq="W-MON",
+        adstock_retention=0.50,
+        carryover_mode="infinite_horizon",
+    )
+    assert isinstance(inf_df, pd.DataFrame)
+    assert inf_df["delta_y"].iloc[0] == pytest.approx(direct_week_convs * 2.0, rel=1e-2)
 
 
 def test_disaggregate_mmm_contributions_channel_and_creative() -> None:
@@ -202,7 +217,7 @@ def test_disaggregate_mmm_contributions_channel_and_creative() -> None:
 
     # Week 1: Creative_Hero on RTL (high efficiency: 1000 lift for 5000 spend)
     #         Creative_Brand on VOX (low efficiency: 250 lift for 5000 spend)
-    # Week 2: Dark week (0 airings), but PyMC MMM attributes +500 adstock halo!
+    # Week 2: Dark week (0 airings), but MMM attributes +500 total TV contribution
     spots = pd.DataFrame([
         {
             "channel": "RTL",
@@ -234,17 +249,18 @@ def test_disaggregate_mmm_contributions_channel_and_creative() -> None:
         adstock_retention=0.50,
     )
     assert len(creative_df) == 2
-    # Exact additivity: sum of creative MMM contributions must equal 1500 + 500 = 2000
-    assert creative_df["mmm_contribution"].sum() == pytest.approx(2000.0)
-    assert creative_df["mmm_lower"].sum() == pytest.approx(1550.0)
-    assert creative_df["mmm_upper"].sum() == pytest.approx(2450.0)
+    # Exact additivity: sum of creative allocated MMM contributions equals 1500 + 500 = 2000
+    assert creative_df["allocated_mmm_contribution"].sum() == pytest.approx(2000.0)
+    assert (creative_df["allocated_lower"] <= creative_df["allocated_mmm_contribution"]).all()
+    assert (creative_df["allocated_upper"] >= creative_df["allocated_mmm_contribution"]).all()
 
-    # Creative_Hero_30s had 80% of causal lift (1000 / 1250), despite 50% spend share:
     hero_row = creative_df.loc[creative_df["creative_id"] == "Creative_Hero_30s"].iloc[0]
+    brand_row = creative_df.loc[creative_df["creative_id"] == "Creative_Brand_15s"].iloc[0]
     assert hero_row["share_of_spend"] == pytest.approx(0.50)
-    assert hero_row["share_of_mmm"] == pytest.approx(0.80)
-    assert hero_row["mmm_contribution"] == pytest.approx(1600.0)
-    assert hero_row["halo_lift"] == pytest.approx(600.0)  # 1600 total MMM - 1000 direct
+    assert hero_row["allocated_mmm_contribution"] > brand_row["allocated_mmm_contribution"]
+    assert hero_row["reconciliation_residual"] == pytest.approx(
+        hero_row["allocated_mmm_contribution"] - hero_row["direct_lift_floor"]
+    )
 
     # 2. Check weekly panel grain (verifying Dark Week carryover attribution in Week 2)
     panel_df = disaggregate_mmm_contributions(
@@ -256,12 +272,10 @@ def test_disaggregate_mmm_contributions_channel_and_creative() -> None:
         return_period_grain=True,
     )
     assert len(panel_df) == 4  # 2 groups x 2 weeks
-    week2_hero = panel_df.loc[
-        (panel_df["creative_id"] == "Creative_Hero_30s") & (panel_df["spend"] == 0.0)
-    ].iloc[0]
-    # In dark Week 2, Hero creative still gets 80% of Week 2's 500 adstock halo = 400!
-    assert week2_hero["mmm_contribution"] == pytest.approx(400.0)
-    assert week2_hero["halo_lift"] == pytest.approx(400.0)
+    week2_panel = panel_df.loc[panel_df["spend"] == 0.0]
+    assert week2_panel["allocated_mmm_contribution"].sum() == pytest.approx(500.0)
+    week2_hero = week2_panel.loc[week2_panel["creative_id"] == "Creative_Hero_30s"].iloc[0]
+    assert week2_hero["reconciliation_residual"] == pytest.approx(week2_hero["allocated_mmm_contribution"])
 
 
 

@@ -95,11 +95,14 @@ def export_meridian_package(
     freq: str = "W-MON",
     elasticity: float = 0.70,
     adstock_retention: float = 0.0,
+    carryover_mode: str | None = None,
     mmm_channel_name: str | None = None,
     min_sigma_rel: float = 0.05,
+    discrepancy_rel: float = 0.10,
+    overlap_with_mmm_outcome: str = "unknown",
     output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Safely dispatches Google Meridian export to compiled `spotlift_pro` binary.
+    """Safely dispatches Google Meridian interchange export to compiled `spotlift_pro` binary.
 
     Raises:
         ProFeatureNotInstalledError: If spotlift_pro is not installed.
@@ -107,7 +110,7 @@ def export_meridian_package(
     """
     if not HAS_PRO or spotlift_pro is None:
         raise ProFeatureNotInstalledError(
-            "🔒 SpotLift Pro is required for turnkey Google Meridian ModelSpec & calibration export.\n"
+            "🔒 SpotLift Pro is required for turnkey Google Meridian interchange & calibration export.\n"
             "To install the compiled binary:\n"
             "    >>> import spotlift as sl\n"
             "    >>> sl.install_pro(api_key='SL_PRO_...')\n"
@@ -131,8 +134,11 @@ def export_meridian_package(
         freq=freq,
         elasticity=elasticity,
         adstock_retention=adstock_retention,
+        carryover_mode=carryover_mode,
         mmm_channel_name=mmm_channel_name,
         min_sigma_rel=min_sigma_rel,
+        discrepancy_rel=discrepancy_rel,
+        overlap_with_mmm_outcome=overlap_with_mmm_outcome,
         output_dir=output_dir,
     )
 
@@ -149,7 +155,10 @@ def export_robyn_package(
     freq: str = "W-MON",
     elasticity: float = 0.70,
     adstock_retention: float = 0.0,
+    carryover_mode: str | None = None,
+    experimental_confidence: float | None = None,
     mmm_channel_name: str | None = None,
+    overlap_with_mmm_outcome: str = "unknown",
     output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Safely dispatches Meta Robyn export to compiled `spotlift_pro` binary.
@@ -185,6 +194,9 @@ def export_robyn_package(
         freq=freq,
         elasticity=elasticity,
         adstock_retention=adstock_retention,
+        carryover_mode=carryover_mode,
+        experimental_confidence=experimental_confidence,
         mmm_channel_name=mmm_channel_name,
+        overlap_with_mmm_outcome=overlap_with_mmm_outcome,
         output_dir=output_dir,
     )

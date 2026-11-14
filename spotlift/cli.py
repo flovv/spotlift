@@ -444,6 +444,18 @@ def sql(
 def optimize(
     spots: Path = typer.Option(..., "--spots", "-s", help="Path to attributed spots CSV/Parquet (or airings file if --web is provided)."),
     web: Path | None = typer.Option(None, "--web", "-w", help="Optional GA4 telemetry path if spots file is not yet attributed."),
+    mmm_file: Path | None = typer.Option(
+        None,
+        "--mmm",
+        help="Optional path to MMM posterior contributions CSV/Parquet/JSON (Direction 2: MMM -> SpotLift Optimizer).",
+    ),
+    mmm_adstock: float = typer.Option(0.0, "--mmm-adstock", help="MMM geometric adstock retention lambda in [0, 1) when --mmm is provided."),
+    risk_aversion: float = typer.Option(0.0, "--risk-aversion", help="Posterior uncertainty penalty weight (>= 0) when --mmm is provided."),
+    outcome_overlap: str = typer.Option(
+        "unknown",
+        "--outcome-overlap",
+        help="Outcome provenance vs MMM: 'unknown', 'independent_stream', or 'shared_same_series'.",
+    ),
     budget: float | None = typer.Option(None, "--budget", "-b", help="Target total budget. Defaults to current flight spend."),
     max_shift: float = typer.Option(0.35, "--max-shift", "-m", help="Maximum relative budget reallocation allowed per channel (e.g. 0.35 = ±35%)."),
     elasticity: float = typer.Option(0.70, "--elasticity", "-e", help="Diminishing returns elasticity parameter beta (0 < beta < 1)."),
@@ -456,11 +468,11 @@ def optimize(
     export_mmm: Path | None = typer.Option(
         None,
         "--export-mmm",
-        help="Optional directory path to export period-aligned PyMC lift test calibration data alongside optimization.",
+        help="Optional directory path to export causal lower-bound & PyMC MMM calibration files alongside optimization.",
     ),
     tz: str = typer.Option("UTC", "--tz", "-z", help="Timezone if raw airings are provided."),
 ) -> None:
-    """Solves constrained budget reallocation using diminishing returns response curves and marginal CPIV."""
+    """Solves constrained budget reallocation using diminishing returns curves (optionally anchored to MMM)."""
     if spots.suffix.lower() in [".parquet", ".pq"]:
         df = pd.read_parquet(spots)
     else:
@@ -475,6 +487,15 @@ def optimize(
         web_df = sl.load_telemetry(web, tz=tz)
         df = sl.analyze_spots(airings=airings_df, web_telemetry=web_df)
 
+    mmm_payload = None
+    if mmm_file is not None:
+        overlap_clean = outcome_overlap if outcome_overlap in ("unknown", "independent_stream", "shared_same_series") else "unknown"
+        mmm_payload = sl.load_mmm_results(
+            mmm_file,
+            adstock_retention=mmm_adstock,
+            overlap_with_spots_outcome=overlap_clean,  # type: ignore[arg-type]
+        )
+
     opt_res = sl.optimize_budget(
         df=df,
         total_budget=budget,
@@ -484,6 +505,8 @@ def optimize(
         max_shift=max_shift,
         elasticity=elasticity,
         compute_scenarios=True,
+        mmm_results=mmm_payload,
+        risk_aversion=risk_aversion,
     )
 
     if json_output:
@@ -517,25 +540,36 @@ def optimize(
 
     if export_mmm:
         export_mmm.mkdir(parents=True, exist_ok=True)
-        ts_col = "timestamp" if "timestamp" in df.columns else None
+        ts_col = "timestamp"
+        lb_ev = sl.export_causal_lower_bound(
+            df,
+            channel_col=channel_col,
+            cost_col=cost_col,
+            lift_col=lift_col,
+            timestamp_col=ts_col,
+            elasticity=elasticity,
+        )
+        lb_out = export_mmm / "pymc_causal_lower_bound.csv"
+        lb_ev.data.to_csv(lb_out, index=False)
         pymc_df = sl.export_pymc_lift_test(
             df,
             channel_col=channel_col,
             cost_col=cost_col,
             lift_col=lift_col,
-            timestamp_col=ts_col or "timestamp",
+            timestamp_col=ts_col,
             elasticity=elasticity,
         )
+        assert isinstance(pymc_df, pd.DataFrame)
         pymc_out = export_mmm / "pymc_lift_test.csv"
         pymc_df.to_csv(pymc_out, index=False)
-        console.print(f"[green]✔ Saved PyMC MMM lift test calibration to:[/] {pymc_out}")
+        console.print(f"[green]✔ Saved PyMC causal lower-bound & lift test calibration to:[/] {export_mmm}")
 
 
 @app.command()
 def mmm(
     spots: Path = typer.Option(..., "--spots", "-s", help="Path to attributed spots CSV/Parquet (or airings file if --web is provided)."),
     web: Path | None = typer.Option(None, "--web", "-w", help="Optional GA4 telemetry path if spots file is not yet attributed."),
-    target: str = typer.Option("pymc", "--target", "-t", help="Target MMM framework: 'pymc', 'meridian', 'robyn', or 'all'."),
+    target: str = typer.Option("pymc", "--target", "-t", help="Target MMM framework: 'pymc', 'lower-bound', 'meridian', 'robyn', or 'all'."),
     out_dir: Path = typer.Option(Path("./mmm_export"), "--out-dir", "-o", help="Directory path to export calibration files."),
     freq: str = typer.Option("W-MON", "--freq", "-f", help="MMM period frequency: 'W-MON' (weekly) or 'D' (daily)."),
     lift_col: str = typer.Option("incremental_lift", "--lift-col", "-l", help="Incremental lift column ('incremental_lift' or 'key_event_response')."),
@@ -543,15 +577,18 @@ def mmm(
     channel_col: str = typer.Option("channel", "--channel-col", help="Column name identifying media channel/station."),
     timestamp_col: str = typer.Option("timestamp", "--timestamp-col", help="Column name containing spot timestamps."),
     elasticity: float = typer.Option(0.70, "--elasticity", "-e", help="Diminishing returns elasticity beta parameter."),
-    adstock_retention: float = typer.Option(0.0, "--adstock-retention", "-a", help="Geometric adstock retention lambda in [0, 1) to scale immediate spike to total cumulative lift."),
+    adstock_retention: float = typer.Option(0.0, "--adstock-retention", "-a", help="Optional adstock decay lambda in [0, 1) (default 0.0; requires --carryover-mode)."),
+    carryover_mode: str = typer.Option("none", "--carryover-mode", help="Carryover conversion mode: 'none' (default causal floor), 'finite_horizon', or 'infinite_horizon'."),
+    pymc_mode: str = typer.Option("lower_bound", "--pymc-mode", help="PyMC snippet likelihood: 'lower_bound' (asymmetric floor) or 'latent_share' (learned rho)."),
+    outcome_overlap: str = typer.Option("unknown", "--outcome-overlap", help="Outcome provenance vs MMM: 'unknown', 'independent_stream', or 'shared_same_series'."),
     mmm_channel_name: str | None = typer.Option(None, "--mmm-channel-name", help="Optional unified TV channel name (e.g. 'tv_broadcast') to pool stations."),
     api_key: str | None = typer.Option(None, "--key", "-k", help="SpotLift Pro license key (for Meridian and Robyn turnkey exports)."),
     json_output: bool = typer.Option(False, "--json", help="Output machine-readable JSON summary for AI coding agents and pipelines."),
     tz: str = typer.Option("UTC", "--tz", "-z", help="Timezone if raw airings are provided."),
 ) -> None:
-    """Exports period-aligned calibration datasets and Bayesian priors for PyMC-Marketing, Google Meridian, and Meta Robyn."""
+    """Exports causal lower-bound calibration datasets, PyMC potentials, and priors for MMMs."""
     target_clean = target.lower().strip()
-    valid_targets = {"pymc", "meridian", "robyn", "all"}
+    valid_targets = {"pymc", "lower-bound", "meridian", "robyn", "all"}
     if target_clean not in valid_targets:
         console.print(f"[bold red]Invalid target '{target}'. Must be one of: {', '.join(sorted(valid_targets))}[/bold red]")
         raise typer.Exit(code=1)
@@ -559,6 +596,13 @@ def mmm(
     if not (0.0 <= adstock_retention < 1.0):
         console.print(f"[bold red]adstock-retention must be in [0.0, 1.0), got {adstock_retention}[/bold red]")
         raise typer.Exit(code=1)
+
+    if carryover_mode not in ("none", "finite_horizon", "infinite_horizon"):
+        console.print(f"[bold red]Invalid carryover-mode '{carryover_mode}'. Must be 'none', 'finite_horizon', or 'infinite_horizon'.[/bold red]")
+        raise typer.Exit(code=1)
+
+    overlap_clean = outcome_overlap if outcome_overlap in ("unknown", "independent_stream", "shared_same_series") else "unknown"
+    pymc_mode_clean = "latent_share" if pymc_mode == "latent_share" else "lower_bound"
 
     if spots.suffix.lower() in [".parquet", ".pq"]:
         df = pd.read_parquet(spots)
@@ -576,6 +620,7 @@ def mmm(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     generated_deliverables: list[tuple[str, Path, str]] = []
+    warnings_list: list[str] = []
     json_summary: dict[str, Any] = {
         "target": target_clean,
         "freq": freq,
@@ -583,9 +628,42 @@ def mmm(
         "total_spend": float(df[cost_col].sum()) if cost_col in df.columns else 0.0,
         "total_direct_lift": float(df[lift_col].sum()) if lift_col in df.columns else 0.0,
         "files": {},
+        "warnings": warnings_list,
     }
 
-    # 1. PyMC-Marketing / Generic Priors
+    # 1. Causal Lower-Bound + PyMC-Marketing Calibration
+    if target_clean in ("pymc", "lower-bound", "all"):
+        lb_ev = sl.export_causal_lower_bound(
+            df,
+            mmm_channel_name=mmm_channel_name,
+            channel_col=channel_col,
+            timestamp_col=timestamp_col,
+            cost_col=cost_col,
+            lift_col=lift_col,
+            freq=freq,
+            elasticity=elasticity,
+            overlap_with_mmm_outcome=overlap_clean,  # type: ignore[arg-type]
+        )
+        lb_path = out_dir / "pymc_causal_lower_bound.csv"
+        lb_ev.data.to_csv(lb_path, index=False)
+        generated_deliverables.append(("PyMC Causal Lower-Bound CSV", lb_path, f"{len(lb_ev.data)} floor periods (block-boot SE)"))
+        json_summary["files"]["pymc_causal_lower_bound"] = str(lb_path)
+
+        snippet_code = sl.generate_pymc_lower_bound_snippet(lb_ev, mode=pymc_mode_clean)  # type: ignore[arg-type]
+        snippet_path = out_dir / "pymc_lower_bound_model.py"
+        snippet_path.write_text(snippet_code, encoding="utf-8")
+        generated_deliverables.append(("PyMC Potential Adapter Script", snippet_path, f"mode={pymc_mode_clean}"))
+        json_summary["files"]["pymc_lower_bound_model"] = str(snippet_path)
+
+        prov_path = out_dir / "calibration_provenance.json"
+        prov_meta = lb_ev.to_metadata_dict()
+        prov_path.write_text(json.dumps(prov_meta, indent=2), encoding="utf-8")
+        json_summary["files"]["calibration_provenance"] = str(prov_path)
+        json_summary["provenance"] = prov_meta
+        for w in lb_ev.warnings:
+            if w not in warnings_list:
+                warnings_list.append(w)
+
     if target_clean in ("pymc", "all"):
         pymc_df = sl.export_pymc_lift_test(
             df,
@@ -597,10 +675,13 @@ def mmm(
             freq=freq,
             elasticity=elasticity,
             adstock_retention=adstock_retention,
+            carryover_mode=carryover_mode,  # type: ignore[arg-type]
+            overlap_with_mmm_outcome=overlap_clean,  # type: ignore[arg-type]
         )
+        assert isinstance(pymc_df, pd.DataFrame)
         pymc_path = out_dir / "pymc_lift_test.csv"
         pymc_df.to_csv(pymc_path, index=False)
-        generated_deliverables.append(("PyMC-Marketing Lift Test", pymc_path, f"{len(pymc_df)} calibration periods"))
+        generated_deliverables.append(("PyMC-Marketing Lift Test (Exploratory)", pymc_path, f"{len(pymc_df)} calibration periods"))
         json_summary["files"]["pymc_lift_test"] = str(pymc_path)
 
         mmm_priors = sl.export_mmm_priors(
@@ -612,10 +693,12 @@ def mmm(
             freq=freq,
             default_elasticity=elasticity,
             adstock_retention=adstock_retention,
+            carryover_mode=carryover_mode,  # type: ignore[arg-type]
+            overlap_with_mmm_outcome=overlap_clean,  # type: ignore[arg-type]
         )
         priors_path = out_dir / "mmm_priors.json"
         priors_path.write_text(json.dumps(mmm_priors, indent=2), encoding="utf-8")
-        generated_deliverables.append(("Multi-Framework Priors JSON", priors_path, "Robyn + Meridian + PyMC"))
+        generated_deliverables.append(("Multi-Framework Priors JSON", priors_path, "Support-Matched Hill + Floor"))
         json_summary["files"]["mmm_priors"] = str(priors_path)
         json_summary["priors"] = mmm_priors
 
@@ -639,7 +722,7 @@ def mmm(
             calib_file = out_dir / "calibration_data.csv"
             spec_file = out_dir / "meridian_model_spec.yaml"
             generated_deliverables.append(("Google Meridian Calibration Data (Pro)", calib_file, f"{len(meridian_pack['calibration_df'])} periods"))
-            generated_deliverables.append(("Google Meridian ModelSpec YAML (Pro)", spec_file, "LogNormal Hill Priors"))
+            generated_deliverables.append(("Google Meridian Interchange YAML (Pro)", spec_file, "Support-Matched Hill Priors"))
             json_summary["files"]["meridian_calibration_data"] = str(calib_file)
             json_summary["files"]["meridian_model_spec"] = str(spec_file)
         else:
@@ -653,14 +736,16 @@ def mmm(
                     freq=freq,
                     default_elasticity=elasticity,
                     adstock_retention=adstock_retention,
+                    carryover_mode=carryover_mode,  # type: ignore[arg-type]
+                    overlap_with_mmm_outcome=overlap_clean,  # type: ignore[arg-type]
                 )
             meridian_priors = mmm_priors["google_meridian_priors"]
             meridian_path = out_dir / "meridian_priors.json"
             meridian_path.write_text(json.dumps(meridian_priors, indent=2), encoding="utf-8")
-            generated_deliverables.append(("Google Meridian Hill Priors (Open-Core)", meridian_path, "half_saturation + slope"))
+            generated_deliverables.append(("Google Meridian Hill Priors (Open-Core)", meridian_path, "support-matched half_saturation + slope"))
             json_summary["files"]["meridian_priors"] = str(meridian_path)
             if not json_output:
-                console.print("[dim]Tip: Activate SpotLift Pro (`spotlift auth --key ...`) to export turnkey Meridian calibration_data.csv & ModelSpec YAML.[/dim]")
+                console.print("[dim]Tip: Activate SpotLift Pro (`spotlift auth --key ...`) to export turnkey Meridian interchange CSV & YAML.[/dim]")
 
     # 3. Meta Robyn
     if target_clean in ("robyn", "all"):
@@ -696,11 +781,13 @@ def mmm(
                     freq=freq,
                     default_elasticity=elasticity,
                     adstock_retention=adstock_retention,
+                    carryover_mode=carryover_mode,  # type: ignore[arg-type]
+                    overlap_with_mmm_outcome=overlap_clean,  # type: ignore[arg-type]
                 )
             robyn_priors = mmm_priors["meta_robyn_hyperparameters"]
             robyn_path = out_dir / "robyn_hyperparameters.json"
             robyn_path.write_text(json.dumps(robyn_priors, indent=2), encoding="utf-8")
-            generated_deliverables.append(("Meta Robyn Hyperparameters (Open-Core)", robyn_path, "alphas + gammas"))
+            generated_deliverables.append(("Meta Robyn Hyperparameters (Open-Core)", robyn_path, "support-matched alphas + gammas"))
             json_summary["files"]["robyn_hyperparameters"] = str(robyn_path)
             if not json_output:
                 console.print("[dim]Tip: Activate SpotLift Pro (`spotlift auth --key ...`) to export turnkey Robyn calibration_input.csv & run_robyn_calibration.R.[/dim]")
@@ -715,6 +802,8 @@ def mmm(
         for deliv, pth, details in generated_deliverables:
             table.add_row(deliv, str(pth), details)
         console.print(table)
+        for w in warnings_list:
+            console.print(f"[yellow]⚠ {w}[/yellow]")
         console.print(f"\n[green]✔ All {target_clean.upper()} calibration deliverables successfully saved to:[/] {out_dir}\n")
 
 
